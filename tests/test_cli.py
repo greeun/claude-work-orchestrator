@@ -122,3 +122,24 @@ def test_init_auto_redispatch_flag_writes_config(tmp_path, capsys):
     main(["--root", str(tmp_path), "init", "--auto-redispatch"])
     capsys.readouterr()
     assert load_config(tmp_path).auto_redispatch is True
+
+
+def test_gc_auto_redispatch_does_not_crash(git_root, capsys):
+    import json
+    import shutil
+    from pathlib import Path
+    from backlog import Backlog
+    r = str(git_root)
+    (git_root / "backlog" / "config.json").write_text(
+        json.dumps({"auto_redispatch": True})
+    )
+    main(["--root", r, "add", "A"]); capsys.readouterr()
+    main(["--root", r, "classify", "T-001", "--touches", "mod/", "--auto"]); capsys.readouterr()
+    main(["--root", r, "dispatch", "T-001"])
+    wt = capsys.readouterr().out.split("@")[-1].strip()
+    shutil.rmtree(wt)                     # kill the session → missing worktree
+    main(["--root", r, "gc"])             # must NOT raise; reclaim then auto-redispatch
+    out = capsys.readouterr().out
+    assert "reclaimed: T-001" in out
+    assert "redispatched: T-001" in out
+    assert Backlog(git_root).get("T-001")["status"] == "active"

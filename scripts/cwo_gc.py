@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 from backlog import Backlog
 from config import load_config
 from lease import LeaseTable
+
+
+def _git(root, *args) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True
+    )
 
 
 def _age_minutes(iso: str) -> float:
@@ -26,6 +33,11 @@ def gc(root) -> list[dict]:
         if not (missing or stale):
             continue
         leases.release(lease["task"])
+        branch = f"cwo/{lease['task']}"
+        if wt:
+            _git(root, "worktree", "remove", str(wt), "--force")
+        _git(root, "worktree", "prune")
+        _git(root, "branch", "-D", branch)
         try:
             task = backlog.get(lease["task"])
             if task["status"] in ("active", "integrating"):

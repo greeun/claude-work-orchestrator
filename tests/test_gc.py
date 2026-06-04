@@ -48,3 +48,30 @@ def test_gc_keeps_fresh_lease(root, tmp_path):
     reclaimed = gc(root)
     assert reclaimed == []
     assert LeaseTable(root).get(tid) is not None
+
+
+def test_gc_cleans_branch_so_task_can_redispatch(git_root):
+    import shutil
+    import subprocess
+    from pathlib import Path
+    from backlog import Backlog
+    from dispatch import dispatch
+
+    bl = Backlog(git_root)
+    tid = bl.add("t")
+    bl.classify(tid, touches=["mod/"])
+    wt = dispatch(git_root, tid)          # creates worktree + branch cwo/<tid> + lease
+    shutil.rmtree(wt)                     # simulate dead session (worktree gone)
+
+    rec = gc(git_root)
+    assert [r["task"] for r in rec] == [tid]
+    # branch must be removed so re-dispatch can recreate it
+    out = subprocess.run(
+        ["git", "-C", str(git_root), "branch", "--list", f"cwo/{tid}"],
+        capture_output=True, text=True).stdout.strip()
+    assert out == ""
+    assert bl.get(tid)["status"] == "ready"
+    # re-dispatch must NOT raise (previously crashed: branch already exists)
+    wt2 = dispatch(git_root, tid)
+    assert Path(wt2).exists()
+    assert bl.get(tid)["status"] == "active"

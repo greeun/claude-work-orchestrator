@@ -173,7 +173,7 @@ backlog/
 | **Classifier** | inbox 항목의 `touches`·`depends_on` 초안 작성(코드베이스 분석) → 사람 승인 | 코드베이스 |
 | **Dispatcher** | ready 큐에서 비충돌·의존완료 작업 선별 → worktree 생성·리스 획득·active 이동 | Lease Table, git worktree |
 | **Integration Gate** | 테스트 → 머지(rebase) → 리스 반납 → done | full-test-orchestrator, git |
-| **GC/Reaper** | heartbeat 없는 worktree의 고아 리스 회수 | csm live/idle 감지 |
+| **GC/Reaper** | heartbeat 없는 worktree의 고아 리스 회수; 회수 시 해당 작업의 git branch(`cwo/<id>`)·worktree 등록도 best-effort 삭제하여 재투입 시 클린 재생성 가능 | csm live/idle 감지 |
 
 ## Hybrid dispatch boundary
 
@@ -212,7 +212,7 @@ backlog/
 
 ## Edge cases
 
-- **고아 리스**(세션 죽음): heartbeat·worktree 경로로 GC 회수 (csm 연계)
+- **고아 리스**(세션 죽음): heartbeat·worktree 경로로 GC 회수 (csm 연계); 회수 시 `cwo/<id>` 브랜치와 worktree 등록을 best-effort 삭제 → 재투입 시 동일 브랜치명 충돌 없이 클린 재시작 가능
 - **의존 순환/데드락**: 분류 시 `depends_on` 순환 검사
 - **머지 충돌**: integration에서 rebase, 충돌 시 사람 개입
 - **active 폭주**: `max_active` 상한으로 제한
