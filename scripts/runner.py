@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from backlog import Backlog
@@ -11,7 +12,8 @@ from lock import project_lock
 
 
 def run_loop(root, executor=None, *, max_iters: int = 50,
-             dry_run: bool = False, log=lambda m: None) -> dict:
+             dry_run: bool = False, max_parallel: int = 4,
+             log=lambda m: None) -> dict:
     """자율 실행 루프. executor(task: dict, worktree: str) -> bool.
 
     안전장치: executor 미지정+비 dry_run이면 거부. max_iters 상한.
@@ -49,16 +51,26 @@ def run_loop(root, executor=None, *, max_iters: int = 50,
             break
         iters += 1
         for a in active:
-            tid, wt = a["id"], a["worktree"]
-            executed.add(tid)
-            task = Backlog(root).get(tid)
-            log(f"executing {tid} in {wt}")
+            executed.add(a["id"])
+
+        def _run(item):
+            task = Backlog(root).get(item["id"])
+            log(f"executing {item['id']} in {item['worktree']}")
             try:
-                ok = bool(executor(task, wt))
-            except Exception as e:  # executor blew up
-                ok = False
-                log(f"executor raised for {tid}: {e}")
-            if not ok:
+                return item["id"], bool(executor(task, item["worktree"]))
+            except Exception as e:
+                log(f"executor raised for {item['id']}: {e}")
+                return item["id"], False
+
+        results = {}
+        with ThreadPoolExecutor(max_workers=max(1, max_parallel)) as pool:
+            for fut in as_completed([pool.submit(_run, a) for a in active]):
+                tid, ok = fut.result()
+                results[tid] = ok
+
+        for a in active:  # integrate sequentially (main branch merge is serial)
+            tid = a["id"]
+            if not results.get(tid):
                 failed.append(tid)
                 log(f"executor failed for {tid}; leaving active")
                 continue

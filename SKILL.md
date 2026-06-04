@@ -140,10 +140,12 @@ Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시
 ## 자율 실행 데몬 (cwo run) — 고위험
 
 ```bash
-python scripts/cwo.py --root <PROJ> run --executor '<셸 템플릿>' [--max-iters N] [--dry-run]
+python scripts/cwo.py --root <PROJ> run --executor '<셸 템플릿>' [--max-iters N] [--dry-run] [--max-parallel N]
 ```
 
 `cwo run`은 `loop_status → dispatch-auto → executor(worktree) → integrate`를 자동 반복하는 헤드리스 실행 루프다.
+
+- **`--max-parallel N`** (기본 4): 한 라운드에서 active 작업의 executor를 N개까지 동시 실행한다. 각 작업이 disjoint worktree에서 돌기 때문에 안전하게 병렬화된다. `integrate`는 main 브랜치 체크아웃·머지가 직렬이어야 하므로 executor 완료 후 순서대로 직렬 실행한다.
 
 - **executor**: 실제 작업 수행자. 예: `claude -p "$CWO_PROMPT"` (headless claude). 프롬프트·컨텍스트는 환경변수로 전달 — 셸 인젝션 방지:
   - `$CWO_PROMPT` — 작업 title (프롬프트 내용)

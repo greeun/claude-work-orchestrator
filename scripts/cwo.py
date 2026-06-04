@@ -138,7 +138,8 @@ def cmd_run(args):
     executor = runner_mod.command_executor(args.executor) if args.executor else None
     try:
         summary = runner_mod.run_loop(
-            root, executor, max_iters=args.max_iters, dry_run=args.dry_run, log=print)
+            root, executor, max_iters=args.max_iters, dry_run=args.dry_run,
+            max_parallel=args.max_parallel, log=print)
     except ValueError as e:
         print(f"error: {e}")
         sys.exit(2)
@@ -207,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     rn.add_argument("--executor", help="shell template; prompt via $CWO_PROMPT env. e.g. 'claude -p \"$CWO_PROMPT\"'")
     rn.add_argument("--max-iters", dest="max_iters", type=int, default=50)
     rn.add_argument("--dry-run", dest="dry_run", action="store_true")
+    rn.add_argument("--max-parallel", dest="max_parallel", type=int, default=4)
     rn.set_defaults(func=cmd_run)
 
     sv = sub.add_parser("serve")

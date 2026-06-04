@@ -61,3 +61,29 @@ def test_run_loop_executor_failure_leaves_active_and_terminates(git_root):
     assert a in summary["failed"]
     assert a not in summary["done"]
     assert Backlog(git_root).get(a)["status"] == "active"  # left for human
+
+
+def test_run_loop_executes_independent_tasks_in_parallel(git_root):
+    import threading
+    from pathlib import Path
+    _set_pass_gate(git_root)
+    bl = Backlog(git_root)
+    a = bl.add("A"); bl.classify(a, touches=["a/"], auto=True)
+    b = bl.add("B"); bl.classify(b, touches=["b/"], auto=True)
+
+    barrier = threading.Barrier(2, timeout=5)
+
+    def parallel_executor(task, worktree):
+        try:
+            barrier.wait()  # both must run concurrently to pass; sequential -> timeout
+        except threading.BrokenBarrierError:
+            return False
+        f = Path(worktree) / f"{task['id']}.txt"
+        f.write_text(task["title"] + "\n")
+        subprocess.run(["git", "-C", str(worktree), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(worktree), "commit", "-q", "-m", f"do {task['id']}"], check=True)
+        return True
+
+    summary = run_loop(git_root, parallel_executor, max_iters=20, max_parallel=4)
+    assert set(summary["done"]) == {a, b}  # both cleared the barrier => ran in parallel
+    assert summary["failed"] == []
