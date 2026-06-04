@@ -217,6 +217,7 @@ backlog/
 - **머지 충돌**: integration에서 rebase, 충돌 시 사람 개입
 - **active 폭주**: `max_active` 상한으로 제한
 - **작업 중 touches 확장 충돌**: 해당 worktree 일시정지 후 재직렬화
+- **다중 프로세스 동시 접근**: `backlog/.lock` 파일 락(`fcntl.flock` 배타 락)으로 변경 명령 경계를 직렬화. 데몬·웹 UI·멀티 세션이 동시에 백로그/LEASES.json을 변경해도 일관성이 보장된다. 기존의 "단일 오케스트레이터 직렬 전제"는 CLI 레벨 동시성에 한해 제거됨 (v1 범위). 읽기 명령은 락을 잡지 않는다.
 
 ## Evolution path
 

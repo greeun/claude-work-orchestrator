@@ -121,6 +121,10 @@ Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시
   - `gc --redispatch` / `gc --no-redispatch` 동일
 - `auto=true`인 작업만 투입한다 (하이브리드 정책 유지, 사람 승인이 필요한 작업은 건드리지 않음).
 
+## 동시성
+
+변경 명령(add/classify/dispatch/integrate/gc 등)은 `backlog/.lock` 배타 락을 잡아 다중 프로세스(데몬·웹·세션) 동시 실행 시 백로그/리스 일관성을 보장한다. 읽기 명령(list, leases, check, loop-status, serve)과 `init`은 락을 잡지 않는다. (트레이드오프: integrate가 테스트 실행 동안 락을 보유 — v1은 명령 경계 락, 세밀화는 추후.)
+
 ## 오케스트레이션 루프 (자동 실행 — Claude가 수행)
 
 사용자가 "작업들 자동으로 굴려줘" 류로 요청하면, Claude(오케스트레이터)는 아래 루프를

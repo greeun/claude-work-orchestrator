@@ -15,6 +15,7 @@ import web as web_mod
 from backlog import Backlog
 from config import load_config
 from lease import LeaseTable
+from lock import project_lock
 
 
 def _root(args) -> Path:
@@ -40,17 +41,21 @@ def cmd_init(args):
 
 
 def cmd_add(args):
-    tid = Backlog(_root(args)).add(
-        args.title, type=args.type, source=args.source, priority=args.priority
-    )
+    root = _root(args)
+    with project_lock(root):
+        tid = Backlog(root).add(
+            args.title, type=args.type, source=args.source, priority=args.priority
+        )
     print(tid)
 
 
 def cmd_classify(args):
-    Backlog(_root(args)).classify(
-        args.id, touches=args.touches or [],
-        depends_on=args.depends_on or [], auto=args.auto,
-    )
+    root = _root(args)
+    with project_lock(root):
+        Backlog(root).classify(
+            args.id, touches=args.touches or [],
+            depends_on=args.depends_on or [], auto=args.auto,
+        )
     print(f"{args.id} -> ready")
 
 
@@ -74,12 +79,16 @@ def cmd_check(args):
 
 
 def cmd_dispatch(args):
-    wt = dispatch_mod.dispatch(_root(args), args.id)
+    root = _root(args)
+    with project_lock(root):
+        wt = dispatch_mod.dispatch(root, args.id)
     print(f"{args.id} -> active @ {wt}")
 
 
 def cmd_dispatch_auto(args):
-    ids = dispatch_mod.dispatch_auto(_root(args))
+    root = _root(args)
+    with project_lock(root):
+        ids = dispatch_mod.dispatch_auto(root)
     print("dispatched: " + (", ".join(ids) if ids else "(none)"))
 
 
@@ -91,24 +100,31 @@ def _should_redispatch(root, flag) -> bool:
 
 def cmd_integrate(args):
     root = _root(args)
-    res = integrate_mod.integrate(root, args.id)
-    if res.get("ok") and _should_redispatch(root, args.redispatch):
-        res["redispatched"] = dispatch_mod.dispatch_auto(root)
+    with project_lock(root):
+        res = integrate_mod.integrate(root, args.id)
+        if res.get("ok") and _should_redispatch(root, args.redispatch):
+            res["redispatched"] = dispatch_mod.dispatch_auto(root)
     print(json.dumps(res, ensure_ascii=False))
     sys.exit(0 if res.get("ok") else 1)
 
 
 def cmd_gc(args):
     root = _root(args)
-    rec = gc_mod.gc(root)
+    with project_lock(root):
+        rec = gc_mod.gc(root)
+        if _should_redispatch(root, args.redispatch):
+            ids = dispatch_mod.dispatch_auto(root)
+        else:
+            ids = None
     print("reclaimed: " + (", ".join(r["task"] for r in rec) if rec else "(none)"))
-    if _should_redispatch(root, args.redispatch):
-        ids = dispatch_mod.dispatch_auto(root)
+    if ids is not None:
         print("redispatched: " + (", ".join(ids) if ids else "(none)"))
 
 
 def cmd_heartbeat(args):
-    LeaseTable(_root(args)).heartbeat(args.id)
+    root = _root(args)
+    with project_lock(root):
+        LeaseTable(root).heartbeat(args.id)
     print(f"{args.id} heartbeat updated")
 
 
