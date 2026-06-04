@@ -57,16 +57,17 @@ python scripts/cwo.py --root <PROJ> serve --port 8787       # 웹 대시보드 (
 ```
 
 `serve`는 백로그·리스·loop 상태를 브라우저로 보여주는 대시보드(로컬 전용, 127.0.0.1). GET + POST 지원:
-- **읽기**: `/api/state` (GET) — 전체 상태 JSON
-- **쓰기 (POST, project_lock 하에 실행)**:
+- **읽기**: `/api/state` (GET) — 전체 상태 JSON. 읽기(GET)는 인증 불필요.
+- **쓰기 (POST, project_lock 하에 실행)** — `X-CWO-Token` 헤더가 서버 기동 시 출력된 토큰과 일치해야 함(CSRF 보호). 불일치 시 403:
   - `/api/add` `{"title", "type"?, "source"?, "priority"?}` → `{"id"}`
   - `/api/classify` `{"id", "touches"?, "depends_on"?, "auto"?}` → `{"ok", "id"}`
   - `/api/dispatch` `{"id"}` → `{"ok", "worktree"}`
   - `/api/dispatch-auto` `{}` → `{"dispatched": [...]}`
   - `/api/integrate` `{"id"}` → integrate 결과 dict
   - `/api/gc` `{}` → `{"reclaimed": [...]}`
+- **CSRF 토큰**: 기동 시 랜덤 토큰(`secrets.token_hex(16)`)이 생성되어 콘솔에 출력됨. `--token` 플래그로 고정 토큰 지정 가능. 브라우저 대시보드는 같은 오리진이므로 페이지에 토큰이 주입되어 쓰기 버튼이 자동으로 헤더를 전송. 교차 오리진 공격자는 토큰을 읽을 수 없으므로 CSRF 차단.
 - **UI 컨트롤**: 상단 툴바(add-task 폼, dispatch-auto 버튼, gc 버튼), ready 컬럼 각 태스크에 touches 입력·auto 체크박스·classify 버튼·dispatch 버튼, active 컬럼 각 태스크에 integrate 버튼.
-- 인증/CSRF 없음 — 로컬 개발 전용(127.0.0.1). 외부 노출 금지.
+- 로컬 전용(127.0.0.1). 외부 노출 금지.
 
 ## 분류(triage) 결정 트리 — 발견된 작업을 어디로
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -21,19 +22,23 @@ def build_state(root) -> dict:
     }
 
 
-def handle_path(root, path) -> tuple[int, str, bytes]:
+def handle_path(root, path, token: str = "") -> tuple[int, str, bytes]:
     path = path.split("?", 1)[0]
     if path in ("/", "/index.html"):
-        return 200, "text/html; charset=utf-8", INDEX_HTML.encode("utf-8")
+        html = INDEX_HTML.replace("{{CWO_TOKEN}}", token)
+        return 200, "text/html; charset=utf-8", html.encode("utf-8")
     if path == "/api/state":
         body = json.dumps(build_state(root), ensure_ascii=False).encode("utf-8")
         return 200, "application/json; charset=utf-8", body
     return 404, "text/plain; charset=utf-8", b"not found"
 
 
-def handle_post(root, path, body: bytes) -> tuple[int, str, bytes]:
+def handle_post(root, path, body: bytes,
+                provided_token=None, expected_token=None) -> tuple[int, str, bytes]:
     ct = "application/json; charset=utf-8"
     path = path.split("?", 1)[0]
+    if expected_token is not None and provided_token != expected_token:
+        return 403, ct, b'{"error": "forbidden"}'
     try:
         data = json.loads(body) if body else {}
     except json.JSONDecodeError:
@@ -69,12 +74,14 @@ def handle_post(root, path, body: bytes) -> tuple[int, str, bytes]:
     return 200, ct, json.dumps(result, ensure_ascii=False).encode("utf-8")
 
 
-def serve(root, host: str = "127.0.0.1", port: int = 8787) -> None:
+def serve(root, host: str = "127.0.0.1", port: int = 8787,
+          token: str | None = None) -> None:
     root = Path(root)
+    token = token or secrets.token_hex(16)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            status, ctype, body = handle_path(root, self.path)
+            status, ctype, body = handle_path(root, self.path, token=token)
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
@@ -84,7 +91,10 @@ def serve(root, host: str = "127.0.0.1", port: int = 8787) -> None:
         def do_POST(self):
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length) if length else b""
-            status, ctype, resp = handle_post(root, self.path, body)
+            provided = self.headers.get("X-CWO-Token")
+            status, ctype, resp = handle_post(root, self.path, body,
+                                              provided_token=provided,
+                                              expected_token=token)
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(resp)))
@@ -95,7 +105,7 @@ def serve(root, host: str = "127.0.0.1", port: int = 8787) -> None:
             pass
 
     httpd = HTTPServer((host, port), Handler)
-    print(f"cwo dashboard on http://{host}:{port}  (Ctrl-C to stop)")
+    print(f"cwo dashboard on http://{host}:{port}  (token: {token})")
     httpd.serve_forever()
 
 
@@ -142,13 +152,14 @@ INDEX_HTML = """<!doctype html>
 <h2>Active leases</h2>
 <div id="leases"></div>
 <script>
+const CWO_TOKEN = "{{CWO_TOKEN}}";
 const STATUSES=["inbox","ready","active","done"];
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
 async function postJSON(path, obj){
   let r;
   try{
-    r=await (await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)})).json();
+    r=await (await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-CWO-Token":CWO_TOKEN},body:JSON.stringify(obj)})).json();
   }catch(e){alert("network error: "+e); return {};}
   if(r.error){alert("error: "+r.error);}
   tick();

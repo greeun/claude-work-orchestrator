@@ -147,7 +147,7 @@ def cmd_run(args):
 
 
 def cmd_serve(args):
-    web_mod.serve(_root(args), host=args.host, port=args.port)
+    web_mod.serve(_root(args), host=args.host, port=args.port, token=args.token)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -214,6 +214,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv = sub.add_parser("serve")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8787)
+    sv.add_argument("--token", default=None,
+                    help="fixed CSRF token (default: random hex generated at startup)")
     sv.set_defaults(func=cmd_serve)
 
     return p

@@ -84,3 +84,34 @@ def test_post_dispatch_auto_and_gc(git_root):
     assert st == 200 and a in _j.loads(body)["dispatched"]
     st2, _c2, body2 = handle_post(git_root, "/api/gc", b"{}")
     assert st2 == 200 and "reclaimed" in _j.loads(body2)
+
+
+def test_handle_post_rejects_wrong_token(root):
+    from web import handle_post
+    st, _c, _b = handle_post(root, "/api/dispatch-auto", b"{}",
+                             provided_token="wrong", expected_token="secret")
+    assert st == 403
+
+
+def test_handle_post_accepts_matching_token(git_root):
+    import json as _j
+    from web import handle_post
+    st, _c, body = handle_post(git_root, "/api/dispatch-auto", b"{}",
+                               provided_token="secret", expected_token="secret")
+    assert st == 200
+    assert "dispatched" in _j.loads(body)
+
+
+def test_handle_post_no_auth_when_expected_token_none(root):
+    import json as _j
+    from web import handle_post
+    st, _c, body = handle_post(root, "/api/add", b'{"title":"x"}', expected_token=None)
+    assert st == 200
+    assert "id" in _j.loads(body)
+
+
+def test_handle_path_injects_token_into_page(root):
+    from web import handle_path
+    st, ctype, body = handle_path(root, "/", token="tok-xyz")
+    assert st == 200
+    assert b"tok-xyz" in body
