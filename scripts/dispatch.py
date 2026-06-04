@@ -71,3 +71,45 @@ def dispatch_auto(root) -> list[str]:
             dispatch(root, task["id"])
             dispatched.append(task["id"])
     return dispatched
+
+
+def loop_status(root) -> dict:
+    """오케스트레이션 루프용 읽기 전용 상태 스냅샷.
+
+    - counts: 상태별 작업 수
+    - active: 현재 실행 중(active/integrating) 작업 [{id, worktree}]
+    - dispatchable: 지금 바로 투입 가능한 ready·auto 작업 id (can_dispatch True)
+    - blocked_auto: ready·auto지만 지금은 막힌 작업 [{id, reason}]
+    - needs_approval: ready지만 auto=false (사람 승인 필요) id
+    - loop_can_progress: 자동 루프가 더 진행할 여지가 있나 (active 있거나 dispatchable 있음)
+    """
+    root = Path(root)
+    backlog, leases, config = Backlog(root), LeaseTable(root), load_config(root)
+    tasks = backlog.list()
+    counts = {"inbox": 0, "ready": 0, "active": 0, "integrating": 0, "done": 0}
+    for t in tasks:
+        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    active = [
+        {"id": t["id"], "worktree": t.get("worktree")}
+        for t in tasks if t["status"] in ("active", "integrating")
+    ]
+    dispatchable, blocked_auto, needs_approval = [], [], []
+    for t in tasks:
+        if t["status"] != "ready":
+            continue
+        if not t.get("auto"):
+            needs_approval.append(t["id"])
+            continue
+        ok, reason = can_dispatch(backlog, leases, config, t)
+        if ok:
+            dispatchable.append(t["id"])
+        else:
+            blocked_auto.append({"id": t["id"], "reason": reason})
+    return {
+        "counts": counts,
+        "active": active,
+        "dispatchable": dispatchable,
+        "blocked_auto": blocked_auto,
+        "needs_approval": needs_approval,
+        "loop_can_progress": bool(active) or bool(dispatchable),
+    }

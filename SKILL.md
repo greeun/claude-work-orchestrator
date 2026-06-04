@@ -48,6 +48,7 @@ python scripts/cwo.py --root <PROJ> dispatch-auto        # auto=true·비충돌 
 python scripts/cwo.py --root <PROJ> integrate T-001      # 테스트→머지→리스 반납→done
 python scripts/cwo.py --root <PROJ> gc                   # 고아 리스 회수
 python scripts/cwo.py --root <PROJ> heartbeat T-001       # active 작업의 리스 heartbeat 갱신 (gc 회수 방지)
+python scripts/cwo.py --root <PROJ> loop-status            # 오케스트레이션 루프용 상태(JSON)
 ```
 
 ## 분류(triage) 결정 트리 — 발견된 작업을 어디로
@@ -112,3 +113,21 @@ Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시
   - `integrate T-001 --no-redispatch` → config가 `true`여도 재투입 안 함
   - `gc --redispatch` / `gc --no-redispatch` 동일
 - `auto=true`인 작업만 투입한다 (하이브리드 정책 유지, 사람 승인이 필요한 작업은 건드리지 않음).
+
+## 오케스트레이션 루프 (자동 실행 — Claude가 수행)
+
+사용자가 "작업들 자동으로 굴려줘" 류로 요청하면, Claude(오케스트레이터)는 아래 루프를
+자기 Agent(서브에이전트) 도구로 끝까지 실행한다. cwo는 스케줄링을, Claude는 실행을 맡는다.
+(중간에 사용자에게 일일이 묻지 말고 끝까지 진행하되, needs_approval·통합 실패·오류는 보고)
+
+1. `cwo loop-status` 로 현황 파악 (JSON).
+2. `cwo dispatch-auto` 로 비충돌·auto·의존완료 작업을 worktree로 투입.
+3. 새로 active가 된 작업마다 **서브에이전트(Agent)** 를 `cwd=worktree`로 띄워 구현·커밋시킨다.
+   - 서로 touches가 안 겹치므로 병렬 spawn 가능.
+   - 서브에이전트 프롬프트엔 worktree 절대경로, 작업 title/설명, "구현 후 그 worktree에서 커밋, 외부는 건드리지 말 것"을 준다.
+4. 서브에이전트가 끝나면 `cwo integrate <id>` (테스트→머지→리스 반납).
+   - `auto_redispatch=true`면 integrate가 막혔던 작업을 자동 투입 → 루프가 다음 라운드에 집는다.
+5. `loop-status`의 `loop_can_progress`가 false가 될 때까지 2~4를 반복.
+6. 종료 시 보고: 완료 목록, `needs_approval`(사람 승인 대기), `blocked_auto`, 통합 실패 작업.
+
+**안전 경계**: `auto=false` 작업은 자동 투입하지 않고 `needs_approval`로 보고(사람 승인). 통합 실패(테스트/머지 충돌)면 그 작업은 `active`로 되돌아오며 사람에게 보고한다. 이 루프는 Claude 세션 안에서 돈다(완전 무인 데몬은 Phase 3).

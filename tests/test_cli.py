@@ -124,6 +124,17 @@ def test_init_auto_redispatch_flag_writes_config(tmp_path, capsys):
     assert load_config(tmp_path).auto_redispatch is True
 
 
+def test_loop_status_cli_outputs_json(root, capsys):
+    import json as _json
+    from backlog import Backlog
+    bl = Backlog(root)
+    a = bl.add("a"); bl.classify(a, touches=["x/"], auto=True)
+    main(["--root", str(root), "loop-status"])
+    data = _json.loads(capsys.readouterr().out)
+    assert a in data["dispatchable"]
+    assert data["loop_can_progress"] is True
+
+
 def test_gc_auto_redispatch_does_not_crash(git_root, capsys):
     import json
     import shutil

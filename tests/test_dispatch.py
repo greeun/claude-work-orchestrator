@@ -103,3 +103,45 @@ def test_dispatch_auto_only_auto_and_nonconflicting(git_root):
     dispatched = dispatch_auto(git_root)
     assert dispatched == [a]
     assert bl.get(a)["status"] == "active"
+
+
+def test_loop_status_empty(root):
+    from dispatch import loop_status
+    s = loop_status(root)
+    assert s["counts"]["ready"] == 0
+    assert s["dispatchable"] == []
+    assert s["active"] == []
+    assert s["loop_can_progress"] is False
+
+
+def test_loop_status_buckets_ready_tasks(root):
+    from dispatch import loop_status
+    bl = Backlog(root)
+    a = bl.add("a"); bl.classify(a, touches=["x/"], auto=True)     # dispatchable
+    b = bl.add("b"); bl.classify(b, touches=["y/"])                # needs_approval (auto False)
+    s = loop_status(root)
+    assert a in s["dispatchable"]
+    assert b in s["needs_approval"]
+    assert s["loop_can_progress"] is True
+
+
+def test_loop_status_blocked_auto_by_lease(root):
+    from dispatch import loop_status
+    from lease import LeaseTable
+    LeaseTable(root).acquire("T-099", ["x/"], "/tmp/wt")
+    bl = Backlog(root)
+    a = bl.add("a"); bl.classify(a, touches=["x/sub"], auto=True)   # conflicts with x/
+    s = loop_status(root)
+    assert a in [x["id"] for x in s["blocked_auto"]]
+    assert s["dispatchable"] == []
+
+
+def test_loop_status_active_makes_progress_true(root):
+    from dispatch import loop_status
+    bl = Backlog(root)
+    a = bl.add("a"); bl.classify(a, touches=["x/"])
+    bl.set_fields(a, worktree="/tmp/wt-a"); bl.move(a, "active")
+    s = loop_status(root)
+    assert s["counts"]["active"] == 1
+    assert {"id": a, "worktree": "/tmp/wt-a"} in s["active"]
+    assert s["loop_can_progress"] is True

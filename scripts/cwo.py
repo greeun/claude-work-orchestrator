@@ -104,6 +104,10 @@ def cmd_heartbeat(args):
     print(f"{args.id} heartbeat updated")
 
 
+def cmd_loop_status(args):
+    print(json.dumps(dispatch_mod.loop_status(_root(args)), ensure_ascii=False, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cwo", description="Claude Work Orchestrator")
     p.add_argument("--root", default=".", help="project root containing backlog/")
@@ -155,6 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     hb = sub.add_parser("heartbeat")
     hb.add_argument("id")
     hb.set_defaults(func=cmd_heartbeat)
+
+    sub.add_parser("loop-status").set_defaults(func=cmd_loop_status)
     return p
 
 
