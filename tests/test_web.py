@@ -36,3 +36,51 @@ def test_handle_path_strips_query_and_404(root):
     assert st == 200
     st2, _c2, body2 = handle_path(root, "/nope")
     assert st2 == 404
+
+
+def test_post_add_then_classify(root):
+    import json as _j
+    from web import handle_post, build_state
+    st, _c, body = handle_post(root, "/api/add", _j.dumps({"title": "x", "type": "bug"}).encode())
+    assert st == 200
+    tid = _j.loads(body)["id"]
+    st2, _c2, _b2 = handle_post(root, "/api/classify",
+                                _j.dumps({"id": tid, "touches": ["a/"], "auto": True}).encode())
+    assert st2 == 200
+    t = [x for x in build_state(root)["tasks"] if x["id"] == tid][0]
+    assert t["status"] == "ready" and t["auto"] is True and t["touches"] == ["a/"]
+
+
+def test_post_invalid_json_returns_400(root):
+    from web import handle_post
+    st, _c, _b = handle_post(root, "/api/add", b"not json")
+    assert st == 400
+
+
+def test_post_unknown_endpoint_404(root):
+    from web import handle_post
+    st, _c, _b = handle_post(root, "/api/nope", b"{}")
+    assert st == 404
+
+
+def test_post_classify_cycle_returns_400(root):
+    import json as _j
+    from web import handle_post
+    from backlog import Backlog
+    bl = Backlog(root)
+    a = bl.add("a"); b = bl.add("b")
+    handle_post(root, "/api/classify", _j.dumps({"id": b, "depends_on": [a]}).encode())
+    st, _c, _b = handle_post(root, "/api/classify", _j.dumps({"id": a, "depends_on": [b]}).encode())
+    assert st == 400  # cycle rejected (ValueError -> 400)
+
+
+def test_post_dispatch_auto_and_gc(git_root):
+    import json as _j
+    from web import handle_post
+    from backlog import Backlog
+    bl = Backlog(git_root)
+    a = bl.add("a"); bl.classify(a, touches=["m/"], auto=True)
+    st, _c, body = handle_post(git_root, "/api/dispatch-auto", b"{}")
+    assert st == 200 and a in _j.loads(body)["dispatched"]
+    st2, _c2, body2 = handle_post(git_root, "/api/gc", b"{}")
+    assert st2 == 200 and "reclaimed" in _j.loads(body2)

@@ -53,10 +53,20 @@ python scripts/cwo.py --root <PROJ> integrate T-001      # 테스트→머지→
 python scripts/cwo.py --root <PROJ> gc                   # 고아 리스 회수
 python scripts/cwo.py --root <PROJ> heartbeat T-001       # active 작업의 리스 heartbeat 갱신 (gc 회수 방지)
 python scripts/cwo.py --root <PROJ> loop-status            # 오케스트레이션 루프용 상태(JSON)
-python scripts/cwo.py --root <PROJ> serve --port 8787       # 읽기전용 웹 대시보드 (http://127.0.0.1:8787)
+python scripts/cwo.py --root <PROJ> serve --port 8787       # 웹 대시보드 (http://127.0.0.1:8787)
 ```
 
-`serve`는 백로그·리스·loop 상태를 브라우저로 보여주는 읽기 전용 대시보드(로컬 전용, GET만).
+`serve`는 백로그·리스·loop 상태를 브라우저로 보여주는 대시보드(로컬 전용, 127.0.0.1). GET + POST 지원:
+- **읽기**: `/api/state` (GET) — 전체 상태 JSON
+- **쓰기 (POST, project_lock 하에 실행)**:
+  - `/api/add` `{"title", "type"?, "source"?, "priority"?}` → `{"id"}`
+  - `/api/classify` `{"id", "touches"?, "depends_on"?, "auto"?}` → `{"ok", "id"}`
+  - `/api/dispatch` `{"id"}` → `{"ok", "worktree"}`
+  - `/api/dispatch-auto` `{}` → `{"dispatched": [...]}`
+  - `/api/integrate` `{"id"}` → integrate 결과 dict
+  - `/api/gc` `{}` → `{"reclaimed": [...]}`
+- **UI 컨트롤**: 상단 툴바(add-task 폼, dispatch-auto 버튼, gc 버튼), ready 컬럼 각 태스크에 touches 입력·auto 체크박스·classify 버튼·dispatch 버튼, active 컬럼 각 태스크에 integrate 버튼.
+- 인증/CSRF 없음 — 로컬 개발 전용(127.0.0.1). 외부 노출 금지.
 
 ## 분류(triage) 결정 트리 — 발견된 작업을 어디로
 
