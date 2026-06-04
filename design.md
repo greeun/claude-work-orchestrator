@@ -104,45 +104,65 @@ inbox ─분류─▶ ready ─투입(리스획득)─▶ active ─작업완료
 
 ## Data model
 
+> **저장 포맷 = JSON (stdlib·무의존성)**. csm이 런타임 저장에 `json`을 쓰므로 일관성·무의존성을 위해 cwo도 JSON. 사람이 직접 편집하기보다 `cwo` CLI로 등록/수정하는 것을 기본 경로로 본다.
+
 ### 백로그 디렉터리 (상태 = 위치)
 
 ```
 backlog/
   inbox/          # 막 등록됨·미분류 (수시 인입의 착지점)
-    T-042.yaml
+    T-042.json
   ready/          # 분류 완료(touches/depends_on 채움)·투입 대기
   active/         # in-progress·리스 보유 (integrating도 여기 — 별도 디렉터리 없음)
-    T-038.yaml
+    T-038.json
   done/           # 완료 아카이브
-  LEASES.yaml     # 활성 리스 = touches 점유 현황 (충돌 판정 테이블)
+  LEASES.json     # 활성 리스 = touches 점유 현황 (충돌 판정 테이블)
 ```
 
 디렉터리는 4개(`inbox/ready/active/done`). `integrating`은 **별도 디렉터리가 아니라** active/에 머문 채(리스 보유) 통합 게이트가 도는 *전이 단계*다. 리스는 active→done 이동 시점에 반납한다.
 
-### 작업 레코드 (`T-NNN.yaml`)
+### 작업 레코드 (`T-NNN.json`)
 
-```yaml
-id: T-042
-title: 결제 환불 시 음수 금액 검증
-type: bug                    # feature | bug | refactor
-source: discovered           # human | discovered(from: T-038)
-touches: [payment/refund.ts] # ← 충돌 판정의 핵심 키 (기본 입도: 디렉터리/모듈)
-depends_on: []               # 선행 작업 id
-status: inbox                # inbox|ready|active|integrating|done — active/integrating은 active/ 디렉터리 공유
-priority: high
-auto: false                  # true면 사람 승인 없이 자동 투입 허용
-worktree: null               # 투입 시 채워짐 (경로)
+```json
+{
+  "id": "T-042",
+  "title": "결제 환불 시 음수 금액 검증",
+  "type": "bug",
+  "source": "discovered(from: T-038)",
+  "touches": ["payment/refund.ts"],
+  "depends_on": [],
+  "status": "inbox",
+  "priority": "high",
+  "auto": false,
+  "worktree": null
+}
 ```
 
-### 리스 테이블 (`LEASES.yaml`)
+필드 의미:
+- `type`: `feature` | `bug` | `refactor`
+- `source`: `human` | `discovered(from: <id>)` — 추적성
+- `touches`: **충돌 판정의 핵심 키** (기본 입도: 디렉터리/모듈)
+- `depends_on`: 선행 작업 id 목록
+- `status`: `inbox`|`ready`|`active`|`integrating`|`done` (active/integrating은 active/ 디렉터리 공유)
+- `auto`: `true`면 사람 승인 없이 자동 투입 허용
+- `worktree`: 투입 시 채워짐(경로), 그 전엔 `null`
 
-```yaml
-leases:
-  - task: T-038
-    touches: [payment/, api/order.ts]
-    worktree: ../proj-T-038
-    heartbeat: <iso8601>      # 죽은 세션 GC 판정용
+### 리스 테이블 (`LEASES.json`)
+
+```json
+{
+  "leases": [
+    {
+      "task": "T-038",
+      "touches": ["payment/", "api/order.ts"],
+      "worktree": "../proj-T-038",
+      "heartbeat": "2026-06-04T10:21:00+00:00"
+    }
+  ]
+}
 ```
+
+`heartbeat`(ISO8601)는 죽은 세션 GC 판정용. worktree 경로는 csm 세션 매칭에도 사용.
 
 ## Components (각각 단일 책임)
 
