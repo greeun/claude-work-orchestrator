@@ -69,3 +69,27 @@ class Backlog:
                 if status is None or t["status"] == status:
                     out.append(t)
         return out
+
+    def set_fields(self, task_id: str, **fields) -> dict[str, Any]:
+        task = self.get(task_id)
+        task.update(fields)
+        self.save(task)
+        return task
+
+    def move(self, task_id: str, to_status: str) -> dict[str, Any]:
+        if to_status not in STATUSES:
+            raise ValueError(f"bad status: {to_status}")
+        src = self.path_of(task_id)
+        task = json.loads(src.read_text())
+        task["status"] = to_status
+        dst = self.base / dir_for_status(to_status) / src.name
+        self._write(dst, task)
+        if dst != src:
+            src.unlink()
+        return task
+
+    def classify(self, task_id: str, touches, depends_on=None,
+                 auto: bool = False) -> dict[str, Any]:
+        self.set_fields(task_id, touches=list(touches),
+                        depends_on=list(depends_on or []), auto=auto)
+        return self.move(task_id, "ready")
