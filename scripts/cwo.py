@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cwo_gc as gc_mod
 import dispatch as dispatch_mod
 import integrate as integrate_mod
+import web as web_mod
 from backlog import Backlog
 from config import load_config
 from lease import LeaseTable
@@ -115,6 +116,10 @@ def cmd_loop_status(args):
     print(json.dumps(dispatch_mod.loop_status(_root(args)), ensure_ascii=False, indent=2))
 
 
+def cmd_serve(args):
+    web_mod.serve(_root(args), host=args.host, port=args.port)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cwo", description="Claude Work Orchestrator")
     p.add_argument("--root", default=".", help="project root containing backlog/")
@@ -168,6 +173,12 @@ def build_parser() -> argparse.ArgumentParser:
     hb.set_defaults(func=cmd_heartbeat)
 
     sub.add_parser("loop-status").set_defaults(func=cmd_loop_status)
+
+    sv = sub.add_parser("serve")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.set_defaults(func=cmd_serve)
+
     return p
 
 
