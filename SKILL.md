@@ -24,6 +24,10 @@ description: >
 
 세션 자체의 관측(어떤 터미널이 살아있나)은 **csm**의 역할. cwo는 *작업*을 다룬다.
 
+## 셋업 주의
+
+대상 프로젝트가 git repo면 빌드/테스트 아티팩트(`__pycache__/`, `*.pyc`, `.pytest_cache/` 등)를 반드시 `.gitignore`하라. 안 그러면 통합 게이트의 `test_command`가 만든 아티팩트가 worktree 머지를 깨뜨릴 수 있다. `cwo init`이 `.gitignore` 없으면 경고한다.
+
 ## Core loop
 
 ```

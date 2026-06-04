@@ -154,3 +154,27 @@ def test_gc_auto_redispatch_does_not_crash(git_root, capsys):
     assert "reclaimed: T-001" in out
     assert "redispatched: T-001" in out
     assert Backlog(git_root).get("T-001")["status"] == "active"
+
+
+def test_init_warns_git_repo_without_gitignore(git_root, capsys):
+    # git_root is a git repo with a README but no .gitignore
+    main(["--root", str(git_root), "init"])
+    out = capsys.readouterr().out.lower()
+    assert "warning" in out
+    assert "gitignore" in out
+
+
+def test_init_no_warning_when_gitignore_present(git_root, capsys):
+    (git_root / ".gitignore").write_text("__pycache__/\n")
+    main(["--root", str(git_root), "init"])
+    out = capsys.readouterr().out.lower()
+    # "gitignore" only appears in the warning line; path never contains it
+    assert "gitignore" not in out
+
+
+def test_init_no_warning_when_not_git_repo(root, capsys):
+    # `root` fixture is NOT a git repo
+    main(["--root", str(root), "init"])
+    out = capsys.readouterr().out.lower()
+    # "gitignore" only appears in the warning line; path never contains it
+    assert "gitignore" not in out

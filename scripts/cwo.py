@@ -28,6 +28,13 @@ def cmd_init(args):
         data = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
         data["auto_redispatch"] = True
         cfg_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    if (root / ".git").exists() and not (root / ".gitignore").exists():
+        print(
+            "warning: no .gitignore in this git repo. "
+            "Ensure build/test artifacts (e.g. __pycache__/, *.pyc) are gitignored — "
+            "otherwise the integration gate's test_command can pollute the tree "
+            "and make integrate's merge fail."
+        )
     print(f"initialized backlog at {root / 'backlog'}")
 
 
