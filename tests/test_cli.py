@@ -160,21 +160,21 @@ def test_init_warns_git_repo_without_gitignore(git_root, capsys):
     # git_root is a git repo with a README but no .gitignore
     main(["--root", str(git_root), "init"])
     out = capsys.readouterr().out.lower()
-    assert "warning" in out
-    assert "gitignore" in out
+    # distinctive warning sentence — never appears in a tmp path
+    assert "no .gitignore in this git repo" in out
 
 
 def test_init_no_warning_when_gitignore_present(git_root, capsys):
     (git_root / ".gitignore").write_text("__pycache__/\n")
     main(["--root", str(git_root), "init"])
     out = capsys.readouterr().out.lower()
-    # "gitignore" only appears in the warning line; path never contains it
-    assert "gitignore" not in out
+    # distinctive warning sentence — never appears in a tmp path
+    assert "no .gitignore in this git repo" not in out
 
 
 def test_init_no_warning_when_not_git_repo(root, capsys):
     # `root` fixture is NOT a git repo
     main(["--root", str(root), "init"])
     out = capsys.readouterr().out.lower()
-    # "gitignore" only appears in the warning line; path never contains it
-    assert "gitignore" not in out
+    # distinctive warning sentence — never appears in a tmp path
+    assert "no .gitignore in this git repo" not in out
