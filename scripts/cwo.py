@@ -21,8 +21,14 @@ def _root(args) -> Path:
 
 
 def cmd_init(args):
-    Backlog(_root(args)).init()
-    print(f"initialized backlog at {_root(args) / 'backlog'}")
+    root = _root(args)
+    Backlog(root).init()
+    if getattr(args, "auto_redispatch", False):
+        cfg_path = root / "backlog" / "config.json"
+        data = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
+        data["auto_redispatch"] = True
+        cfg_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    print(f"initialized backlog at {root / 'backlog'}")
 
 
 def cmd_add(args):
@@ -69,15 +75,28 @@ def cmd_dispatch_auto(args):
     print("dispatched: " + (", ".join(ids) if ids else "(none)"))
 
 
+def _should_redispatch(root, flag) -> bool:
+    if flag is not None:
+        return flag
+    return load_config(root).auto_redispatch
+
+
 def cmd_integrate(args):
-    res = integrate_mod.integrate(_root(args), args.id)
+    root = _root(args)
+    res = integrate_mod.integrate(root, args.id)
+    if res.get("ok") and _should_redispatch(root, args.redispatch):
+        res["redispatched"] = dispatch_mod.dispatch_auto(root)
     print(json.dumps(res, ensure_ascii=False))
     sys.exit(0 if res.get("ok") else 1)
 
 
 def cmd_gc(args):
-    rec = gc_mod.gc(_root(args))
+    root = _root(args)
+    rec = gc_mod.gc(root)
     print("reclaimed: " + (", ".join(r["task"] for r in rec) if rec else "(none)"))
+    if _should_redispatch(root, args.redispatch):
+        ids = dispatch_mod.dispatch_auto(root)
+        print("redispatched: " + (", ".join(ids) if ids else "(none)"))
 
 
 def cmd_heartbeat(args):
@@ -90,7 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", default=".", help="project root containing backlog/")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("init").set_defaults(func=cmd_init)
+    init_p = sub.add_parser("init")
+    init_p.add_argument("--auto-redispatch", dest="auto_redispatch", action="store_true")
+    init_p.set_defaults(func=cmd_init)
 
     a = sub.add_parser("add")
     a.add_argument("title")
@@ -124,9 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     i = sub.add_parser("integrate")
     i.add_argument("id")
+    i.add_argument("--redispatch", action=argparse.BooleanOptionalAction, default=None)
     i.set_defaults(func=cmd_integrate)
 
-    sub.add_parser("gc").set_defaults(func=cmd_gc)
+    gc_p = sub.add_parser("gc")
+    gc_p.add_argument("--redispatch", action=argparse.BooleanOptionalAction, default=None)
+    gc_p.set_defaults(func=cmd_gc)
 
     hb = sub.add_parser("heartbeat")
     hb.add_argument("id")

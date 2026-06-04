@@ -21,3 +21,15 @@ def test_config_json_overrides_defaults(root):
     assert cfg.test_command == "true"
     # 지정 안 한 값은 기본 유지
     assert cfg.main_branch == "main"
+
+
+def test_auto_redispatch_default_false(root):
+    cfg = load_config(root)
+    assert cfg.auto_redispatch is False
+
+
+def test_auto_redispatch_from_config(root):
+    (root / "backlog" / "config.json").write_text(
+        json.dumps({"auto_redispatch": True})
+    )
+    assert load_config(root).auto_redispatch is True

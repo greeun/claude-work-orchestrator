@@ -54,3 +54,71 @@ def test_heartbeat_command_updates_lease(root, capsys):
     out = capsys.readouterr().out
     assert "T-001" in out
     assert lt.get("T-001")["heartbeat"] != "2000-01-01T00:00:00+00:00"
+
+
+def _commit_in_worktree(wt):
+    import subprocess
+    from pathlib import Path
+    (Path(wt) / "f.txt").write_text("x\n")
+    subprocess.run(["git", "-C", wt, "add", "-A"], check=True)
+    subprocess.run(["git", "-C", wt, "commit", "-q", "-m", "w"], check=True)
+
+
+def _setup_blocked_pair(git_root, capsys, auto_redispatch):
+    """T-001 active(holds mod/), T-002 ready+auto blocked by overlap (mod/sub)."""
+    import json
+    cfg = {"test_command": "true"}
+    if auto_redispatch:
+        cfg["auto_redispatch"] = True
+    (git_root / "backlog" / "config.json").write_text(json.dumps(cfg))
+    r = str(git_root)
+    main(["--root", r, "add", "A"]); capsys.readouterr()
+    main(["--root", r, "add", "B"]); capsys.readouterr()
+    main(["--root", r, "classify", "T-001", "--touches", "mod/", "--auto"]); capsys.readouterr()
+    main(["--root", r, "classify", "T-002", "--touches", "mod/sub", "--auto"]); capsys.readouterr()
+    main(["--root", r, "dispatch", "T-001"])
+    wt = capsys.readouterr().out.split("@")[-1].strip()
+    _commit_in_worktree(wt)
+    return r
+
+
+def test_integrate_auto_redispatch_picks_up_blocked_task(git_root, capsys):
+    import pytest
+    r = _setup_blocked_pair(git_root, capsys, auto_redispatch=True)
+    with pytest.raises(SystemExit) as e:
+        main(["--root", r, "integrate", "T-001"])
+    assert e.value.code == 0
+    out = capsys.readouterr().out
+    assert "redispatched" in out and "T-002" in out
+    main(["--root", r, "list", "--status", "active"])
+    assert "T-002" in capsys.readouterr().out
+
+
+def test_integrate_manual_mode_does_not_redispatch(git_root, capsys):
+    import pytest
+    r = _setup_blocked_pair(git_root, capsys, auto_redispatch=False)
+    with pytest.raises(SystemExit) as e:
+        main(["--root", r, "integrate", "T-001"])
+    assert e.value.code == 0
+    out = capsys.readouterr().out
+    assert "redispatched" not in out
+    main(["--root", r, "list", "--status", "ready"])
+    assert "T-002" in capsys.readouterr().out  # stays ready (pull-based)
+
+
+def test_integrate_no_redispatch_flag_overrides_auto(git_root, capsys):
+    import pytest
+    r = _setup_blocked_pair(git_root, capsys, auto_redispatch=True)
+    with pytest.raises(SystemExit):
+        main(["--root", r, "integrate", "T-001", "--no-redispatch"])
+    out = capsys.readouterr().out
+    assert "redispatched" not in out
+    main(["--root", r, "list", "--status", "ready"])
+    assert "T-002" in capsys.readouterr().out
+
+
+def test_init_auto_redispatch_flag_writes_config(tmp_path, capsys):
+    from config import load_config
+    main(["--root", str(tmp_path), "init", "--auto-redispatch"])
+    capsys.readouterr()
+    assert load_config(tmp_path).auto_redispatch is True

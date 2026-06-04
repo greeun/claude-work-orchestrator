@@ -10,6 +10,7 @@ DEFAULTS = {
     "test_command": "pytest",
     "main_branch": "main",
     "worktree_parent": None,  # None → root.parent 사용
+    "auto_redispatch": False,
 }
 
 
@@ -20,6 +21,7 @@ class Config:
     test_command: str = "pytest"
     main_branch: str = "main"
     worktree_parent: str | None = None
+    auto_redispatch: bool = False
 
 
 def load_config(root) -> Config:

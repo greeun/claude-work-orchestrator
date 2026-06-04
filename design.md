@@ -221,7 +221,7 @@ backlog/
 ## Evolution path
 
 - **Phase 1 (v1, 지금)**: 파일 백로그 + 리스 엔진 + 하이브리드 디스패치. 입력=CLI/파일.
-- **Phase 2**: 저위험 작업 승인 게이트 자동화 → "대부분 자동".
+- **Phase 2**: 저위험 작업 승인 게이트 자동화 → "대부분 자동". *(첫 번째 Phase-2 증분 구현 완료: `auto_redispatch` config 정책 — `integrate`·`gc` 후 비충돌·auto 작업을 자동 투입하는 스케줄링 루프 자동화. 실행 루프 데몬화는 별도.)*
 - **Phase 3 (미래지향)**: 웹UI 입력 어댑터 + 백로그 감시 오케스트레이터 데몬 → "등록하고 손 떼면 알아서".
 
 ## Testing strategy

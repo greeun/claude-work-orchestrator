@@ -98,6 +98,17 @@ Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시
   "stale_minutes": 30,
   "test_command": "pytest",
   "main_branch": "main",
-  "worktree_parent": null
+  "worktree_parent": null,
+  "auto_redispatch": false
 }
 ```
+
+## 자동 재투입 (선택)
+
+- **수동(기본)**: `integrate` / `gc` 후 비충돌·auto 작업은 그대로 `ready` 상태로 남아, 수동으로 `dispatch-auto`를 실행해야 투입된다.
+- **자동**: `init --auto-redispatch` 또는 `config.json`에 `"auto_redispatch": true`를 설정하면, `integrate`·`gc` 성공 시 자동으로 `dispatch_auto`가 호출되어 비충돌·`auto=true` 작업이 즉시 투입된다.
+- **per-command 오버라이드**: `--redispatch` / `--no-redispatch` 플래그로 config 설정을 개별 명령에서 덮어쓸 수 있다.
+  - `integrate T-001 --redispatch` → config 무관하게 재투입
+  - `integrate T-001 --no-redispatch` → config가 `true`여도 재투입 안 함
+  - `gc --redispatch` / `gc --no-redispatch` 동일
+- `auto=true`인 작업만 투입한다 (하이브리드 정책 유지, 사람 승인이 필요한 작업은 건드리지 않음).
