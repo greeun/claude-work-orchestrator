@@ -88,8 +88,32 @@ class Backlog:
             src.unlink()
         return task
 
+    def _reachable_deps(self, deps: list[str]) -> set[str]:
+        """deps에서 depends_on 간선을 따라 도달 가능한 모든 작업 id 집합.
+
+        존재하지 않는 작업(KeyError)은 나가는 간선이 없는 잎으로 취급한다.
+        """
+        seen: set[str] = set()
+        stack = list(deps)
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            try:
+                task = self.get(cur)
+            except KeyError:
+                continue
+            stack.extend(task.get("depends_on", []))
+        return seen
+
     def classify(self, task_id: str, touches, depends_on=None,
                  auto: bool = False) -> dict[str, Any]:
+        deps = list(depends_on or [])
+        if task_id in self._reachable_deps(deps):
+            raise ValueError(
+                f"dependency cycle: {task_id} is reachable from its own depends_on {deps}"
+            )
         self.set_fields(task_id, touches=list(touches),
-                        depends_on=list(depends_on or []), auto=auto)
+                        depends_on=deps, auto=auto)
         return self.move(task_id, "ready")
