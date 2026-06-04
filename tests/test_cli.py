@@ -40,3 +40,17 @@ def test_full_loop_via_cli(git_root, capsys):
     assert e.value.code == 0
     main(["--root", r, "list", "--status", "done"])
     assert "T-001" in capsys.readouterr().out
+
+
+def test_heartbeat_command_updates_lease(root, capsys):
+    from lease import LeaseTable
+    lt = LeaseTable(root)
+    lt.acquire("T-001", ["x/"], "/tmp/wt")
+    # heartbeat를 과거로 강제
+    leases = lt.load()
+    leases[0]["heartbeat"] = "2000-01-01T00:00:00+00:00"
+    lt._save(leases)
+    main(["--root", str(root), "heartbeat", "T-001"])
+    out = capsys.readouterr().out
+    assert "T-001" in out
+    assert lt.get("T-001")["heartbeat"] != "2000-01-01T00:00:00+00:00"

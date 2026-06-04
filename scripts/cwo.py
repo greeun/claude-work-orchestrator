@@ -80,6 +80,11 @@ def cmd_gc(args):
     print("reclaimed: " + (", ".join(r["task"] for r in rec) if rec else "(none)"))
 
 
+def cmd_heartbeat(args):
+    LeaseTable(_root(args)).heartbeat(args.id)
+    print(f"{args.id} heartbeat updated")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="cwo", description="Claude Work Orchestrator")
     p.add_argument("--root", default=".", help="project root containing backlog/")
@@ -122,6 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
     i.set_defaults(func=cmd_integrate)
 
     sub.add_parser("gc").set_defaults(func=cmd_gc)
+
+    hb = sub.add_parser("heartbeat")
+    hb.add_argument("id")
+    hb.set_defaults(func=cmd_heartbeat)
     return p
 
 
