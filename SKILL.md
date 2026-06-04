@@ -135,6 +135,32 @@ Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시
 
 변경 명령(add/classify/dispatch/integrate/gc 등)은 `backlog/.lock` 배타 락을 잡아 다중 프로세스(데몬·웹·세션) 동시 실행 시 백로그/리스 일관성을 보장한다. 읽기 명령(list, leases, check, loop-status, serve)과 `init`은 락을 잡지 않는다. (트레이드오프: integrate가 테스트 실행 동안 락을 보유 — v1은 명령 경계 락, 세밀화는 추후.)
 
+## 자율 실행 데몬 (cwo run) — 고위험
+
+```bash
+python scripts/cwo.py --root <PROJ> run --executor '<셸 템플릿>' [--max-iters N] [--dry-run]
+```
+
+`cwo run`은 `loop_status → dispatch-auto → executor(worktree) → integrate`를 자동 반복하는 헤드리스 실행 루프다.
+
+- **executor**: 실제 작업 수행자. 예: `claude -p "$CWO_PROMPT"` (headless claude). 프롬프트·컨텍스트는 환경변수로 전달 — 셸 인젝션 방지:
+  - `$CWO_PROMPT` — 작업 title (프롬프트 내용)
+  - `$CWO_TASK_ID` — 작업 ID
+  - `$CWO_WORKTREE` — 할당된 worktree 절대경로
+  - `{id}` / `{worktree}` — 템플릿에 직접 치환 가능한 통제된 값
+- **`--dry-run`**: 상태만 출력, 어떤 작업도 변경하지 않음. executor 없이 실행 가능.
+- **`--max-iters N`**: 반복 상한 (기본 50). 무한 루프 방지.
+
+**안전장치**:
+- executor 미지정 + 비 dry-run이면 즉시 거부(`ValueError`, exit 2).
+- max-iters 상한으로 루프 종료 보장.
+- 각 작업은 한 번만 실행(`executed` 집합 추적) — 영원히 안 끝나는 작업 방지.
+- `integrate`의 진짜 테스트 게이트가 머지를 최종 수호.
+- executor 실패 시 해당 작업은 `active`로 남겨 사람이 처리; 루프는 계속(다른 작업).
+- 충돌 작업은 선행 작업 완료 후 다음 라운드에 직렬화하여 자동 처리.
+
+> **경고**: `cwo run`은 무인으로 코드 생성 후 main에 자동 머지한다. 신뢰된 환경에서, 충분한 테스트 게이트(`test_command`)와 함께만 사용할 것. 헤드리스 claude 인증·비용은 사용자 책임.
+
 ## 오케스트레이션 루프 (자동 실행 — Claude가 수행)
 
 사용자가 "작업들 자동으로 굴려줘" 류로 요청하면, Claude(오케스트레이터)는 아래 루프를

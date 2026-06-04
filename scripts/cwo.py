@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cwo_gc as gc_mod
 import dispatch as dispatch_mod
 import integrate as integrate_mod
+import runner as runner_mod
 import web as web_mod
 from backlog import Backlog
 from config import load_config
@@ -132,6 +133,18 @@ def cmd_loop_status(args):
     print(json.dumps(dispatch_mod.loop_status(_root(args)), ensure_ascii=False, indent=2))
 
 
+def cmd_run(args):
+    root = _root(args)
+    executor = runner_mod.command_executor(args.executor) if args.executor else None
+    try:
+        summary = runner_mod.run_loop(
+            root, executor, max_iters=args.max_iters, dry_run=args.dry_run, log=print)
+    except ValueError as e:
+        print(f"error: {e}")
+        sys.exit(2)
+    print(json.dumps(summary, ensure_ascii=False))
+
+
 def cmd_serve(args):
     web_mod.serve(_root(args), host=args.host, port=args.port)
 
@@ -189,6 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
     hb.set_defaults(func=cmd_heartbeat)
 
     sub.add_parser("loop-status").set_defaults(func=cmd_loop_status)
+
+    rn = sub.add_parser("run")
+    rn.add_argument("--executor", help="shell template; prompt via $CWO_PROMPT env. e.g. 'claude -p \"$CWO_PROMPT\"'")
+    rn.add_argument("--max-iters", dest="max_iters", type=int, default=50)
+    rn.add_argument("--dry-run", dest="dry_run", action="store_true")
+    rn.set_defaults(func=cmd_run)
 
     sv = sub.add_parser("serve")
     sv.add_argument("--host", default="127.0.0.1")

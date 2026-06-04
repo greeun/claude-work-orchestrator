@@ -223,7 +223,7 @@ backlog/
 
 - **Phase 1 (v1, 지금)**: 파일 백로그 + 리스 엔진 + 하이브리드 디스패치. 입력=CLI/파일.
 - **Phase 2**: 저위험 작업 승인 게이트 자동화 → "대부분 자동". *(첫 번째 Phase-2 증분 구현 완료: `auto_redispatch` config 정책 — `integrate`·`gc` 후 비충돌·auto 작업을 자동 투입하는 스케줄링 루프 자동화. 실행 루프 데몬화는 별도.)* *(두 번째 Phase-2 증분 구현 완료: 오케스트레이션 루프 프로토콜 — `loop-status` 명령(읽기 전용 JSON 스냅샷: counts·active·dispatchable·blocked_auto·needs_approval·loop_can_progress)과 SKILL 루프 절차 문서화. executor = Claude 서브에이전트; cwo는 스케줄링 + 상태 제공 역할 분리.)*
-- **Phase 3 (미래지향)**: 웹UI 입력 어댑터 + 백로그 감시 오케스트레이터 데몬 → "등록하고 손 떼면 알아서".
+- **Phase 3 (미래지향)**: 웹UI 입력 어댑터 + 백로그 감시 오케스트레이터 데몬 → "등록하고 손 떼면 알아서". *(첫 번째 Phase-3 증분 구현 완료: 헤드리스 데몬 `cwo run` — loop_status→dispatch-auto→executor→integrate 자율 반복 루프, 가드레일(executor 미지정 거부·max-iters 상한·1회 실행 보장·실패 작업 active 보존)과 스텁 테스트 포함. 실 claude 헤드리스 연결은 사용자 환경. 웹UI 어댑터·백로그 감시 데몬은 미구현.)*
 
 ## Testing strategy
 
