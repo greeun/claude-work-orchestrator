@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from backlog import Backlog
 from lease import LeaseTable
 from config import load_config
@@ -62,3 +64,42 @@ def test_max_active_ceiling_blocks(root):
     ok, reason = can_dispatch(bl, lt, cfg, task)
     assert ok is False
     assert "max_active" in reason
+
+
+import pytest
+
+
+def _ready(bl, title="t", touches=None, auto=False):
+    tid = bl.add(title)
+    bl.classify(tid, touches=touches or [], auto=auto)
+    return tid
+
+
+def test_dispatch_creates_worktree_and_lease(git_root):
+    from dispatch import dispatch
+    bl, lt = Backlog(git_root), LeaseTable(git_root)
+    tid = _ready(bl, touches=["ui/"])
+    wt = dispatch(git_root, tid)
+    assert Path(wt).exists()
+    assert bl.get(tid)["status"] == "active"
+    assert bl.get(tid)["worktree"] == str(wt)
+    assert lt.get(tid)["task"] == tid
+
+
+def test_dispatch_conflicting_raises(git_root):
+    from dispatch import dispatch
+    bl, lt = Backlog(git_root), LeaseTable(git_root)
+    lt.acquire("T-099", ["payment/"], "/tmp/wt")
+    tid = _ready(bl, touches=["payment/refund.ts"])
+    with pytest.raises(RuntimeError):
+        dispatch(git_root, tid)
+
+
+def test_dispatch_auto_only_auto_and_nonconflicting(git_root):
+    from dispatch import dispatch_auto
+    bl = Backlog(git_root)
+    a = _ready(bl, "auto-ok", touches=["ui/"], auto=True)
+    _ready(bl, "manual", touches=["api/"], auto=False)   # auto=False → skip
+    dispatched = dispatch_auto(git_root)
+    assert dispatched == [a]
+    assert bl.get(a)["status"] == "active"
