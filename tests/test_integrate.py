@@ -50,3 +50,35 @@ def test_integrate_failing_tests_keeps_active(git_root):
     assert bl.get(tid)["status"] == "active"        # 되돌림
     assert lt.get(tid) is not None                  # 리스 유지
     assert Path(wt).exists()
+
+
+def test_integrate_does_not_hold_lock_during_tests(git_root):
+    # test_command tries to acquire project_lock; it can only succeed if integrate
+    # is NOT holding the lock while tests run. (If integrate held it, this would
+    # LockTimeout -> nonzero -> "tests failed".)
+    import json
+    from pathlib import Path
+    from backlog import Backlog
+    from dispatch import dispatch
+
+    scripts = str(Path(__file__).resolve().parent.parent / "scripts")
+    # one-line python that grabs the project lock with a short timeout
+    probe = (
+        f'python3 -c "import sys; sys.path.insert(0, {scripts!r}); '
+        f'from lock import project_lock; \n'
+        f'import contextlib\n'
+        f'ctx = project_lock({str(git_root)!r}, timeout=2)\n'
+        f'ctx.__enter__(); ctx.__exit__(None, None, None)"'
+    )
+    (git_root / "backlog" / "config.json").write_text(json.dumps({"test_command": probe}))
+
+    bl = Backlog(git_root)
+    tid = bl.add("f"); bl.classify(tid, touches=["x/"])
+    wt = dispatch(git_root, tid)
+    (Path(wt) / "f.txt").write_text("x\n")
+    subprocess.run(["git", "-C", str(wt), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(wt), "commit", "-q", "-m", "w"], check=True)
+
+    res = integrate(git_root, tid)   # called WITHOUT any external lock
+    assert res["ok"] is True         # would be False if integrate held the lock during tests
+    assert bl.get(tid)["status"] == "done"

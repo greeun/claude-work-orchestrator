@@ -7,6 +7,7 @@ from pathlib import Path
 from backlog import Backlog
 from config import load_config
 from lease import LeaseTable
+from lock import project_lock
 
 
 def _git(root, *args) -> subprocess.CompletedProcess:
@@ -27,7 +28,7 @@ def integrate(root, task_id: str) -> dict:
 
     backlog.move(task_id, "integrating")
 
-    # 1. 테스트
+    # 1. 테스트 — 락 없이 (느린 구간)
     test = subprocess.run(
         shlex.split(config.test_command), cwd=wt, capture_output=True, text=True
     )
@@ -36,21 +37,20 @@ def integrate(root, task_id: str) -> dict:
         return {"ok": False, "reason": "tests failed",
                 "output": test.stdout + test.stderr}
 
-    # 2. 머지
+    # 2~3. 머지·리스 반납·정리·done — 임계구역만 락
     branch = f"cwo/{task_id}"
-    _git(root, "checkout", config.main_branch)
-    m = _git(root, "merge", "--no-ff", branch, "-m",
-             f"merge {task_id}: {task['title']}")
-    if m.returncode != 0:
-        _git(root, "merge", "--abort")
-        backlog.move(task_id, "active")
-        return {"ok": False, "reason": "merge conflict",
-                "output": m.stdout + m.stderr}
-
-    # 3. 리스 반납 + done + 정리
-    leases.release(task_id)
-    _git(root, "worktree", "remove", str(wt), "--force")
-    _git(root, "branch", "-d", branch)
-    backlog.set_fields(task_id, worktree=None)
-    backlog.move(task_id, "done")
+    with project_lock(root):
+        _git(root, "checkout", config.main_branch)
+        m = _git(root, "merge", "--no-ff", branch, "-m",
+                 f"merge {task_id}: {task['title']}")
+        if m.returncode != 0:
+            _git(root, "merge", "--abort")
+            backlog.move(task_id, "active")
+            return {"ok": False, "reason": "merge conflict",
+                    "output": m.stdout + m.stderr}
+        leases.release(task_id)
+        _git(root, "worktree", "remove", str(wt), "--force")
+        _git(root, "branch", "-d", branch)
+        backlog.set_fields(task_id, worktree=None)
+        backlog.move(task_id, "done")
     return {"ok": True, "task": task_id}

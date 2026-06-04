@@ -101,9 +101,9 @@ def _should_redispatch(root, flag) -> bool:
 
 def cmd_integrate(args):
     root = _root(args)
-    with project_lock(root):
-        res = integrate_mod.integrate(root, args.id)
-        if res.get("ok") and _should_redispatch(root, args.redispatch):
+    res = integrate_mod.integrate(root, args.id)
+    if res.get("ok") and _should_redispatch(root, args.redispatch):
+        with project_lock(root):
             res["redispatched"] = dispatch_mod.dispatch_auto(root)
     print(json.dumps(res, ensure_ascii=False))
     sys.exit(0 if res.get("ok") else 1)

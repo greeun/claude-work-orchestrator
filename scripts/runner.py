@@ -62,8 +62,7 @@ def run_loop(root, executor=None, *, max_iters: int = 50,
                 failed.append(tid)
                 log(f"executor failed for {tid}; leaving active")
                 continue
-            with project_lock(root):
-                res = integrate(root, tid)
+            res = integrate(root, tid)
             if res.get("ok"):
                 done.append(tid)
                 log(f"integrated {tid}")
