@@ -209,8 +209,9 @@ scripts/
   cwo_gc.py    # 고아 리스 회수
   runner.py    # 무인 실행 루프(병렬 executor)
   web.py       # 대시보드(http.server, 읽기+쓰기+토큰)
+  tui.py       # 인터랙티브 터미널 UI(curses)
   cwo.py       # CLI 엔트리
-tests/         # pytest(stdlib), 84개
+tests/         # pytest(stdlib), 92개
 SKILL.md       # Claude 오케스트레이터용 프로토콜
 design.md      # 설계 스펙    plan.md  # 구현 계획
 ```
@@ -225,4 +226,4 @@ design.md      # 설계 스펙    plan.md  # 구현 계획
 - **Phase 2 — 자동화**: auto-redispatch · 의존 순환 검사 · heartbeat · loop-status · 오케스트레이션 루프(Claude 서브에이전트가 worktree에서 실행).
 - **Phase 3 — 운영**: 동시성 락 · 웹 대시보드(읽기+쓰기+토큰 인증) · 무인 데몬(병렬·가드레일).
 
-stdlib 전용, 84개 테스트 통과.
+stdlib 전용, 92개 테스트 통과.

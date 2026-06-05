@@ -209,8 +209,9 @@ scripts/
   cwo_gc.py    # orphan-lease reaper
   runner.py    # headless run loop (parallel executors)
   web.py       # dashboard (http.server, read + write + token)
+  tui.py       # interactive terminal UI (curses)
   cwo.py       # CLI entry
-tests/         # pytest (stdlib), 84 tests
+tests/         # pytest (stdlib), 92 tests
 SKILL.md       # protocol for the Claude orchestrator
 design.md      # design spec    plan.md  # implementation plan
 ```
@@ -225,4 +226,4 @@ The backlog (files) is a stable contract; intake adapters (CLI, web) and the dis
 - **Phase 2 — automation**: auto-redispatch · dependency-cycle check · heartbeat · loop-status · orchestration loop (Claude subagents execute in worktrees).
 - **Phase 3 — operations**: concurrency lock · web dashboard (read + write + token auth) · headless daemon (parallel, guard-railed).
 
-stdlib-only, 84 passing tests.
+stdlib-only, 92 passing tests.
