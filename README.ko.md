@@ -32,19 +32,20 @@
 
 ## 설치
 
-`cwo`는 Claude Code 스킬입니다. 심링크로 인식시킵니다:
-
 ```bash
-ln -s "$(pwd)/claude-work-orchestrator" ~/.claude/skills/claude-work-orchestrator
+./install.sh
 ```
 
-CLI로 직접 쓸 땐 alias가 편합니다:
+(재실행 가능한) 설치 스크립트가 스킬을 `~/.claude/skills/`에 링크하고(Claude Code 인식), **`cwo` 명령**을 PATH 디렉터리(`~/.local/bin` 우선)에 심링크합니다. Python(3.9+) 확인과 동작 검증까지 합니다. 제거는 `./install.sh --uninstall`.
+
+수동 설치:
 
 ```bash
-alias cwo='python3 /절대경로/claude-work-orchestrator/scripts/cwo.py'
+ln -s "$(pwd)" ~/.claude/skills/claude-work-orchestrator                  # 스킬 인식
+alias cwo='python3 /절대경로/claude-work-orchestrator/scripts/cwo.py'      # CLI
 ```
 
-아래 예시는 이 alias 기준입니다(없으면 `python3 scripts/cwo.py`).
+아래 예시는 `cwo`가 PATH에 있다고 가정합니다(없으면 `python3 scripts/cwo.py`).
 
 ---
 

@@ -32,19 +32,20 @@ Run many tasks in **one project, in parallel, without conflicts.**
 
 ## Install
 
-`cwo` is a Claude Code skill. Symlink it so Claude Code can discover it:
-
 ```bash
-ln -s "$(pwd)/claude-work-orchestrator" ~/.claude/skills/claude-work-orchestrator
+./install.sh
 ```
 
-For direct CLI use, an alias is convenient:
+The (idempotent) installer links the skill into `~/.claude/skills/` (so Claude Code discovers it) and symlinks a **`cwo` command** into a PATH directory (prefers `~/.local/bin`). It checks Python (3.9+) and verifies the command runs. Remove everything with `./install.sh --uninstall`.
+
+Manual alternative:
 
 ```bash
-alias cwo='python3 /absolute/path/to/claude-work-orchestrator/scripts/cwo.py'
+ln -s "$(pwd)" ~/.claude/skills/claude-work-orchestrator                     # skill discovery
+alias cwo='python3 /absolute/path/to/claude-work-orchestrator/scripts/cwo.py'  # CLI
 ```
 
-The examples below assume that alias (otherwise run `python3 scripts/cwo.py`).
+The examples below assume `cwo` is on your PATH (otherwise run `python3 scripts/cwo.py`).
 
 ---
 
