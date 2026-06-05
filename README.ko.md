@@ -158,6 +158,14 @@ cwo --root ~/myapp serve --port 8787
 - 등록/분류/dispatch/dispatch-auto/integrate/gc를 버튼으로 실행.
 - localhost 전용. 쓰기 엔드포인트는 시작 시 토큰과 일치하는 `X-CWO-Token` 헤더 필요(CSRF 방지); 페이지에 토큰이 주입되어 정상 쓰기는 동작. `--token`으로 고정 토큰 지정.
 
+## TUI (`cwo watch`)
+
+```bash
+cwo --root ~/myapp watch
+```
+
+`cwo --root <PROJ> watch` 명령으로 인터랙티브 터미널 UI를 실행합니다(stdlib curses, 무의존성) — 실시간 뷰 + 키 바인딩(d dispatch, i integrate, a dispatch-auto, g gc, q quit).
+
 ---
 
 ## 무인 데몬 (`cwo run`) — 고위험

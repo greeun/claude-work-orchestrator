@@ -12,6 +12,7 @@ import cwo_gc as gc_mod
 import dispatch as dispatch_mod
 import integrate as integrate_mod
 import runner as runner_mod
+import tui as tui_mod
 import web as web_mod
 from backlog import Backlog
 from config import load_config
@@ -146,6 +147,10 @@ def cmd_run(args):
     print(json.dumps(summary, ensure_ascii=False))
 
 
+def cmd_watch(args):
+    tui_mod.watch(_root(args))
+
+
 def cmd_serve(args):
     web_mod.serve(_root(args), host=args.host, port=args.port, token=args.token)
 
@@ -217,6 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--token", default=None,
                     help="fixed CSRF token (default: random hex generated at startup)")
     sv.set_defaults(func=cmd_serve)
+
+    sub.add_parser("watch").set_defaults(func=cmd_watch)
 
     return p
 

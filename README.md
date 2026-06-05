@@ -158,6 +158,14 @@ cwo --root ~/myapp serve --port 8787
 - Write actions (add / classify / dispatch / dispatch-auto / integrate / gc) via buttons.
 - Localhost-only. Write endpoints require an `X-CWO-Token` header matching the startup token (CSRF protection); the page is served with the token injected so legitimate writes work. Use `--token` to set a fixed token.
 
+## TUI (`cwo watch`)
+
+```bash
+cwo --root ~/myapp watch
+```
+
+`cwo --root <PROJ> watch` launches an interactive terminal UI (stdlib curses, no deps) — live view + keybindings (d dispatch, i integrate, a dispatch-auto, g gc, q quit).
+
 ---
 
 ## Headless daemon (`cwo run`) — high risk

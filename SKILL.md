@@ -54,7 +54,10 @@ python scripts/cwo.py --root <PROJ> gc                   # 고아 리스 회수
 python scripts/cwo.py --root <PROJ> heartbeat T-001       # active 작업의 리스 heartbeat 갱신 (gc 회수 방지)
 python scripts/cwo.py --root <PROJ> loop-status            # 오케스트레이션 루프용 상태(JSON)
 python scripts/cwo.py --root <PROJ> serve --port 8787       # 웹 대시보드 (http://127.0.0.1:8787)
+python scripts/cwo.py --root <PROJ> watch   # 인터랙티브 터미널 TUI
 ```
+
+TUI는 curses 기반 무의존 인터페이스로 상태를 라이브로 보고 키로 dispatch/integrate/dispatch-auto/gc를 실행한다.
 
 `serve`는 백로그·리스·loop 상태를 브라우저로 보여주는 대시보드(로컬 전용, 127.0.0.1). GET + POST 지원:
 - **읽기**: `/api/state` (GET) — 전체 상태 JSON. 읽기(GET)는 인증 불필요.
