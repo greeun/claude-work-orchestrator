@@ -105,6 +105,7 @@ cwo --root ~/myapp integrate T-001               # 테스트 -> 머지 -> 리스
 | `loop-status` | 오케스트레이션 루프용 JSON 상태. |
 | `run [--executor CMD] [--max-iters N] [--max-parallel N] [--dry-run]` | 무인 자율 루프. |
 | `serve [--host] [--port] [--token]` | 읽기/쓰기 웹 대시보드. |
+| `watch` | 인터랙티브 터미널 UI(curses) — 실시간 뷰 + 키 바인딩. |
 
 ### 작업 레코드 (`backlog/<status>/T-NNN.json`)
 

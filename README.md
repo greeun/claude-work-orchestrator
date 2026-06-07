@@ -105,6 +105,7 @@ Because the full `touches` set is acquired atomically at dispatch (no hold-and-w
 | `loop-status` | JSON state for the orchestration loop. |
 | `run [--executor CMD] [--max-iters N] [--max-parallel N] [--dry-run]` | Headless autonomous loop. |
 | `serve [--host] [--port] [--token]` | Read/write web dashboard. |
+| `watch` | Interactive terminal UI (curses) — live view + keybindings. |
 
 ### Task record (`backlog/<status>/T-NNN.json`)
 
