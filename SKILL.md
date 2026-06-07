@@ -1,11 +1,15 @@
 ---
 name: claude-work-orchestrator
+version: 1.0.0
 description: >
-  한 프로젝트에서 수시로 발생하는 요구사항·버그·이슈를 충돌 없이 병렬 처리하는
-  동시작업 오케스트레이터. 파일 백로그에 등록하고, 영향범위 리스로 충돌을 막고,
-  비충돌·독립 작업만 git worktree로 투입한다. csm이 세션을 보면 cwo는 작업을
-  관리한다. Use when: 한 프로젝트에 동시에 여러 작업/이슈가 쌓일 때, 작업을
-  병렬로 안전하게 돌리고 싶을 때, worktree·백로그·작업 큐 관리, `cwo` 명령.
+  A concurrent-work orchestrator that runs the requirements, bugs, and issues
+  that keep cropping up in a single project in parallel, without conflicts.
+  It captures work into a file backlog, blocks conflicts with ownership leases
+  over the affected code regions, and dispatches only non-conflicting,
+  independent work into git worktrees. Where csm watches sessions, cwo manages
+  work. Use when: several tasks/issues pile up in one project at once, you want
+  to run work in parallel safely, or for worktree · backlog · work-queue
+  management and the `cwo` command.
   Triggers — KO: 동시작업, 병렬 작업, 작업 큐, 백로그, 작업 등록, 충돌 없이,
   워크트리 관리, 작업 디스패치. EN: cwo, work orchestrator, backlog, parallel
   tasks, dispatch, worktree management, work queue, concurrent work.
@@ -13,106 +17,107 @@ description: >
 
 # Claude Work Orchestrator (`cwo`)
 
-한 프로젝트에서 작업을 **등록(capture)** 과 **투입(dispatch)** 으로 분리하고,
-**영향범위 리스(lease)** 로 충돌을 구조적으로 차단하는 동시작업 엔진.
+A concurrent-work engine that, within a single project, splits work into
+**capture** and **dispatch**, and structurally blocks conflicts with an
+**ownership lease (lease)** over the affected code region.
 
 ## When to use
 
-- 한 프로젝트에 요구사항·버그·이슈가 동시다발로 쌓일 때.
-- 여러 작업을 병렬로 돌리되 파일/머지 충돌은 피하고 싶을 때.
-- 사용자가 `cwo`를 언급하거나 작업 큐/백로그/worktree 관리를 요청할 때.
+- When requirements · bugs · issues pile up simultaneously in one project.
+- When you want to run several tasks in parallel but avoid file/merge conflicts.
+- When the user mentions `cwo` or asks for work-queue / backlog / worktree management.
 
-세션 자체의 관측(어떤 터미널이 살아있나)은 **csm**의 역할. cwo는 *작업*을 다룬다.
+Observing the sessions themselves (which terminal is alive) is **csm**'s job. cwo deals with *work*.
 
-## 셋업 주의
+## Setup note
 
-대상 프로젝트가 git repo면 빌드/테스트 아티팩트(`__pycache__/`, `*.pyc`, `.pytest_cache/` 등)를 반드시 `.gitignore`하라. 안 그러면 통합 게이트의 `test_command`가 만든 아티팩트가 worktree 머지를 깨뜨릴 수 있다. `cwo init`이 `.gitignore` 없으면 경고한다.
+If the target project is a git repo, be sure to `.gitignore` build/test artifacts (`__pycache__/`, `*.pyc`, `.pytest_cache/`, etc.). Otherwise the artifacts created by the integration gate's `test_command` can break worktree merges. `cwo init` warns when there is no `.gitignore`.
 
 ## Core loop
 
 ```
-등록 → 분류 → 투입(리스 게이트) → 실행(worktree) → 통합(테스트·머지) → done
+capture → classify → dispatch (lease gate) → execute (worktree) → integrate (test · merge) → done
                                        │
-                          발견된 새 작업은 inbox로 되먹임
+                          newly discovered work feeds back into the inbox
 ```
 
 ## Command reference
 
-스크립트 경로: `scripts/cwo.py`. `--root`는 backlog/가 있는 프로젝트 루트(기본 `.`).
+Script path: `scripts/cwo.py`. `--root` is the project root that holds backlog/ (default `.`).
 
 ```bash
-python scripts/cwo.py --root <PROJ> init                 # backlog/ 초기화
-python scripts/cwo.py --root <PROJ> add "<제목>" --type bug --priority high
+python scripts/cwo.py --root <PROJ> init                 # initialize backlog/
+python scripts/cwo.py --root <PROJ> add "<title>" --type bug --priority high
 python scripts/cwo.py --root <PROJ> classify T-001 --touches payment/ api/order.ts --depends-on T-000 [--auto]
 python scripts/cwo.py --root <PROJ> list [--status ready]
-python scripts/cwo.py --root <PROJ> leases               # 활성 리스(점유 현황)
-python scripts/cwo.py --root <PROJ> check T-001          # 투입 가능 판정 (exit 0/1)
-python scripts/cwo.py --root <PROJ> dispatch T-001       # worktree 생성·리스 획득·active
-python scripts/cwo.py --root <PROJ> dispatch-auto        # auto=true·비충돌 작업 일괄 투입
-python scripts/cwo.py --root <PROJ> integrate T-001      # 테스트→머지→리스 반납→done
-python scripts/cwo.py --root <PROJ> gc                   # 고아 리스 회수
-python scripts/cwo.py --root <PROJ> heartbeat T-001       # active 작업의 리스 heartbeat 갱신 (gc 회수 방지)
-python scripts/cwo.py --root <PROJ> loop-status            # 오케스트레이션 루프용 상태(JSON)
-python scripts/cwo.py --root <PROJ> serve --port 8787       # 웹 대시보드 (http://127.0.0.1:8787)
-python scripts/cwo.py --root <PROJ> watch   # 인터랙티브 터미널 TUI
+python scripts/cwo.py --root <PROJ> leases               # active leases (occupied regions)
+python scripts/cwo.py --root <PROJ> check T-001          # dispatchable? (exit 0/1)
+python scripts/cwo.py --root <PROJ> dispatch T-001       # create worktree · acquire lease · active
+python scripts/cwo.py --root <PROJ> dispatch-auto        # bulk-dispatch auto=true · non-conflicting tasks
+python scripts/cwo.py --root <PROJ> integrate T-001      # test → merge → release lease → done
+python scripts/cwo.py --root <PROJ> gc                   # reclaim orphan leases
+python scripts/cwo.py --root <PROJ> heartbeat T-001       # refresh an active task's lease heartbeat (prevents gc reclaim)
+python scripts/cwo.py --root <PROJ> loop-status            # state for the orchestration loop (JSON)
+python scripts/cwo.py --root <PROJ> serve --port 8787       # web dashboard (http://127.0.0.1:8787)
+python scripts/cwo.py --root <PROJ> watch   # interactive terminal TUI
 ```
 
-TUI는 curses 기반 무의존 인터페이스로 상태를 라이브로 보고 키로 dispatch/integrate/dispatch-auto/gc를 실행한다.
+The TUI is a dependency-free curses-based interface that shows state live and runs dispatch/integrate/dispatch-auto/gc via keys.
 
-`serve`는 백로그·리스·loop 상태를 브라우저로 보여주는 대시보드(로컬 전용, 127.0.0.1). GET + POST 지원:
-- **읽기**: `/api/state` (GET) — 전체 상태 JSON. 읽기(GET)는 인증 불필요.
-- **쓰기 (POST, project_lock 하에 실행)** — `X-CWO-Token` 헤더가 서버 기동 시 출력된 토큰과 일치해야 함(CSRF 보호). 불일치 시 403:
+`serve` is a dashboard that shows backlog · leases · loop state in the browser (local-only, 127.0.0.1). Supports GET + POST:
+- **Read**: `/api/state` (GET) — full state JSON. Reads (GET) need no auth.
+- **Write (POST, executed under project_lock)** — the `X-CWO-Token` header must match the token printed at server startup (CSRF protection). 403 on mismatch:
   - `/api/add` `{"title", "type"?, "source"?, "priority"?}` → `{"id"}`
   - `/api/classify` `{"id", "touches"?, "depends_on"?, "auto"?}` → `{"ok", "id"}`
   - `/api/dispatch` `{"id"}` → `{"ok", "worktree"}`
   - `/api/dispatch-auto` `{}` → `{"dispatched": [...]}`
-  - `/api/integrate` `{"id"}` → integrate 결과 dict
+  - `/api/integrate` `{"id"}` → integrate result dict
   - `/api/gc` `{}` → `{"reclaimed": [...]}`
-- **CSRF 토큰**: 기동 시 랜덤 토큰(`secrets.token_hex(16)`)이 생성되어 콘솔에 출력됨. `--token` 플래그로 고정 토큰 지정 가능. 브라우저 대시보드는 같은 오리진이므로 페이지에 토큰이 주입되어 쓰기 버튼이 자동으로 헤더를 전송. 교차 오리진 공격자는 토큰을 읽을 수 없으므로 CSRF 차단.
-- **UI 컨트롤**: 상단 툴바(add-task 폼, dispatch-auto 버튼, gc 버튼), ready 컬럼 각 태스크에 touches 입력·auto 체크박스·classify 버튼·dispatch 버튼, active 컬럼 각 태스크에 integrate 버튼.
-- 로컬 전용(127.0.0.1). 외부 노출 금지.
+- **CSRF token**: at startup a random token (`secrets.token_hex(16)`) is generated and printed to the console. A fixed token can be set with the `--token` flag. The browser dashboard is same-origin, so the token is injected into the page and the write buttons send the header automatically. A cross-origin attacker cannot read the token, so CSRF is blocked.
+- **UI controls**: top toolbar (add-task form, dispatch-auto button, gc button); each task in the ready column has a touches input · auto checkbox · classify button · dispatch button; each task in the active column has an integrate button.
+- Local-only (127.0.0.1). Do not expose externally.
 
-## 분류(triage) 결정 트리 — 발견된 작업을 어디로
+## Triage decision tree — where discovered work goes
 
-active 작업 중 새 이슈를 발견하면, **즉시 처리하지 말고** 먼저 분류한다:
+When you discover a new issue while a task is active, **don't handle it immediately** — classify it first:
 
 ```
-새 이슈 발견
- ├─ 지금 작업 완료에 꼭 필요(Blocking)? → 현재 worktree에서, 별도 커밋
- ├─ 같은 영역·작고·저위험?              → 애매하면 백로그로 ("하는 김에"는 함정)
- └─ 관련 없는 다른 영역?                → 무조건 백로그(add), 현재 브랜치에 안 섞음
+new issue discovered
+ ├─ truly required to finish the current task (Blocking)? → in the current worktree, separate commit
+ ├─ same area · small · low-risk?                         → when in doubt, to the backlog ("while I'm at it" is a trap)
+ └─ unrelated, different area?                            → always to the backlog (add), never mixed into the current branch
 ```
 
-백로그로 회수할 때 `source`에 발견 위치를 남긴다: `add ... --source "discovered(from: T-038)"`.
+When sending it back to the backlog, record where it was found in `source`: `add ... --source "discovered(from: T-038)"`.
 
-## 분류 시 `touches`/`depends_on` 채우기 (Claude의 역할)
+## Filling in `touches`/`depends_on` at classify time (Claude's role)
 
-- **`touches`**: 이 작업이 건드릴 영역. **기본 입도는 디렉터리/모듈** (거칠게 잡아 거짓 병렬 방지). 코드베이스를 보고 초안을 만들고, 사람 승인을 받는다.
-- **`depends_on`**: 선행 작업 id. 순환이 생기지 않게 한다.
+- **`touches`**: the regions this task will touch. **Default granularity is directory/module** (keep it coarse to prevent false parallelism). Draft it by reading the codebase, then get human approval.
+- **`depends_on`**: ids of prerequisite tasks. Make sure no cycle is created.
 
-## 자동 투입 정책 (하이브리드)
+## Auto-dispatch policy (hybrid)
 
-Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시):
-1. `status == ready` (사람이 분류 승인)
-2. `touches`가 모든 활성 리스와 비겹침
-3. `depends_on` 전부 `done`
+Conditions under which Claude may dispatch **without human approval** (all must hold):
+1. `status == ready` (a human approved the classification)
+2. `touches` does not overlap any active lease
+3. all `depends_on` are `done`
 4. `auto == true`
 
-이 외에는 사람 승인 후 `dispatch`. 위험한 작업(광범위 touches, 마이그레이션 등)은 `auto`를 켜지 않는다. → 미래에 `auto` 기본값을 올리면 완전자동으로 전환.
+Otherwise `dispatch` only after human approval. For risky work (broad touches, migrations, etc.) do not turn `auto` on. → In the future, raising the `auto` default flips this to fully automatic.
 
-## 동시 작업 수
+## Number of concurrent tasks
 
-충돌 안전성은 리스가 보장한다. 동시 수는 "안전 한계"가 아니라 "수익 체감 지점":
-모듈성·공유 초크포인트·머지 대역폭·머신 자원·사람 검토의 최솟값. 하이브리드는
-보통 2~4(`config.max_active`, 기본 4). 늘리는 진짜 레버는 코드 모듈성.
+Conflict safety is guaranteed by the leases. The concurrency count is not a "safety limit" but a "point of diminishing returns":
+the minimum of modularity · shared chokepoints · merge bandwidth · machine resources · human review. Hybrid is
+usually 2–4 (`config.max_active`, default 4). The real lever to raise it is code modularity.
 
-## 통합 후 / 정리
+## After integration / cleanup
 
-- `integrate`가 테스트 통과 시 머지하고 리스를 반납한다. 테스트 실패·머지 충돌이면 작업을 `active`로 되돌리고 사람 개입을 요청한다.
-- 세션이 죽어 worktree가 사라지거나 heartbeat가 오래되면 `gc`가 리스를 회수하고 작업을 `ready`로 되돌린다.
-- 오래 도는 active 작업은 주기적으로 `heartbeat`를 갱신해 gc의 stale 회수를 피한다.
+- When `integrate`'s tests pass, it merges and releases the lease. On test failure or merge conflict it returns the task to `active` and asks for human intervention.
+- If a session dies and its worktree disappears, or the heartbeat goes stale, `gc` reclaims the lease and returns the task to `ready`.
+- Long-running active tasks should periodically refresh their `heartbeat` to avoid gc's stale reclaim.
 
-## 설정 (`backlog/config.json`, 선택)
+## Configuration (`backlog/config.json`, optional)
 
 ```json
 {
@@ -125,64 +130,64 @@ Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시
 }
 ```
 
-## 자동 재투입 (선택)
+## Auto-redispatch (optional)
 
-- **수동(기본)**: `integrate` / `gc` 후 비충돌·auto 작업은 그대로 `ready` 상태로 남아, 수동으로 `dispatch-auto`를 실행해야 투입된다.
-- **자동**: `init --auto-redispatch` 또는 `config.json`에 `"auto_redispatch": true`를 설정하면, `integrate`·`gc` 성공 시 자동으로 `dispatch_auto`가 호출되어 비충돌·`auto=true` 작업이 즉시 투입된다.
-- **per-command 오버라이드**: `--redispatch` / `--no-redispatch` 플래그로 config 설정을 개별 명령에서 덮어쓸 수 있다.
-  - `integrate T-001 --redispatch` → config 무관하게 재투입
-  - `integrate T-001 --no-redispatch` → config가 `true`여도 재투입 안 함
-  - `gc --redispatch` / `gc --no-redispatch` 동일
-- `auto=true`인 작업만 투입한다 (하이브리드 정책 유지, 사람 승인이 필요한 작업은 건드리지 않음).
+- **Manual (default)**: after `integrate` / `gc`, non-conflicting · auto tasks simply stay in the `ready` state; you must run `dispatch-auto` manually to dispatch them.
+- **Automatic**: set `init --auto-redispatch`, or `"auto_redispatch": true` in `config.json`, and on a successful `integrate` · `gc`, `dispatch_auto` is called automatically so that non-conflicting · `auto=true` tasks are dispatched immediately.
+- **Per-command override**: the `--redispatch` / `--no-redispatch` flags override the config setting for an individual command.
+  - `integrate T-001 --redispatch` → redispatch regardless of config
+  - `integrate T-001 --no-redispatch` → do not redispatch even if config is `true`
+  - same for `gc --redispatch` / `gc --no-redispatch`
+- Only tasks with `auto=true` are dispatched (the hybrid policy is preserved; tasks that need human approval are left untouched).
 
-## 동시성
+## Concurrency
 
-변경 명령(add/classify/dispatch/integrate/gc 등)은 `backlog/.lock` 배타 락을 잡아 다중 프로세스(데몬·웹·세션) 동시 실행 시 백로그/리스 일관성을 보장한다. 읽기 명령(list, leases, check, loop-status, serve)과 `init`은 락을 잡지 않는다.
+Mutating commands (add/classify/dispatch/integrate/gc, etc.) take the `backlog/.lock` exclusive lock, guaranteeing backlog/lease consistency when multiple processes (daemon · web · sessions) run at the same time. Read commands (list, leases, check, loop-status, serve) and `init` do not take the lock.
 
-`integrate`는 테스트 실행 구간을 **락 없이** 진행하고, git checkout/merge·리스 반납·worktree 정리·done 전환의 임계구역만 self-lock한다. 덕분에 느린 테스트 동안 웹·세션 등 다른 변경 명령이 막히지 않는다. 다른 변경 명령(add/classify/dispatch/gc)은 호출 경계에서 락을 잡는다.
+`integrate` runs the test-execution span **without the lock**, and self-locks only the critical section of git checkout/merge · lease release · worktree cleanup · transition to done. As a result, other mutating commands such as web · sessions are not blocked during slow tests. The other mutating commands (add/classify/dispatch/gc) take the lock at the call boundary.
 
-## 자율 실행 데몬 (cwo run) — 고위험
+## Autonomous execution daemon (cwo run) — high risk
 
 ```bash
-python scripts/cwo.py --root <PROJ> run --executor '<셸 템플릿>' [--max-iters N] [--dry-run] [--max-parallel N]
+python scripts/cwo.py --root <PROJ> run --executor '<shell template>' [--max-iters N] [--dry-run] [--max-parallel N]
 ```
 
-`cwo run`은 `loop_status → dispatch-auto → executor(worktree) → integrate`를 자동 반복하는 헤드리스 실행 루프다.
+`cwo run` is a headless execution loop that automatically repeats `loop_status → dispatch-auto → executor(worktree) → integrate`.
 
-- **`--max-parallel N`** (기본 4): 한 라운드에서 active 작업의 executor를 N개까지 동시 실행한다. 각 작업이 disjoint worktree에서 돌기 때문에 안전하게 병렬화된다. `integrate`는 main 브랜치 체크아웃·머지가 직렬이어야 하므로 executor 완료 후 순서대로 직렬 실행한다.
+- **`--max-parallel N`** (default 4): runs up to N of the active tasks' executors concurrently in a single round. Because each task runs in a disjoint worktree, it parallelizes safely. `integrate` must serialize the main-branch checkout/merge, so it runs serially in order after the executors finish.
 
-- **executor**: 실제 작업 수행자. 예: `claude -p "$CWO_PROMPT"` (headless claude). 프롬프트·컨텍스트는 환경변수로 전달 — 셸 인젝션 방지:
-  - `$CWO_PROMPT` — 작업 title (프롬프트 내용)
-  - `$CWO_TASK_ID` — 작업 ID
-  - `$CWO_WORKTREE` — 할당된 worktree 절대경로
-  - `{id}` / `{worktree}` — 템플릿에 직접 치환 가능한 통제된 값
-- **`--dry-run`**: 상태만 출력, 어떤 작업도 변경하지 않음. executor 없이 실행 가능.
-- **`--max-iters N`**: 반복 상한 (기본 50). 무한 루프 방지.
+- **executor**: the actual work performer. e.g. `claude -p "$CWO_PROMPT"` (headless claude). The prompt · context are passed via environment variables — preventing shell injection:
+  - `$CWO_PROMPT` — task title (the prompt content)
+  - `$CWO_TASK_ID` — task ID
+  - `$CWO_WORKTREE` — assigned worktree absolute path
+  - `{id}` / `{worktree}` — controlled values that can be substituted directly into the template
+- **`--dry-run`**: prints state only, mutates no task. Can run without an executor.
+- **`--max-iters N`**: iteration cap (default 50). Prevents infinite loops.
 
-**안전장치**:
-- executor 미지정 + 비 dry-run이면 즉시 거부(`ValueError`, exit 2).
-- max-iters 상한으로 루프 종료 보장.
-- 각 작업은 한 번만 실행(`executed` 집합 추적) — 영원히 안 끝나는 작업 방지.
-- `integrate`의 진짜 테스트 게이트가 머지를 최종 수호.
-- executor 실패 시 해당 작업은 `active`로 남겨 사람이 처리; 루프는 계속(다른 작업).
-- 충돌 작업은 선행 작업 완료 후 다음 라운드에 직렬화하여 자동 처리.
+**Safeguards**:
+- No executor + non-dry-run → immediate refusal (`ValueError`, exit 2).
+- The max-iters cap guarantees loop termination.
+- Each task runs only once (`executed` set tracking) — prevents never-ending tasks.
+- `integrate`'s real test gate is the final guardian of the merge.
+- On executor failure, that task is left `active` for a human to handle; the loop continues (with other tasks).
+- Conflicting tasks are handled automatically by serializing them into the next round after the prerequisite task completes.
 
-> **경고**: `cwo run`은 무인으로 코드 생성 후 main에 자동 머지한다. 신뢰된 환경에서, 충분한 테스트 게이트(`test_command`)와 함께만 사용할 것. 헤드리스 claude 인증·비용은 사용자 책임.
+> **Warning**: `cwo run` generates code unattended and then auto-merges to main. Use only in a trusted environment, with a sufficient test gate (`test_command`). Headless claude auth · cost is the user's responsibility.
 
-## 오케스트레이션 루프 (자동 실행 — Claude가 수행)
+## Orchestration loop (automated execution — performed by Claude)
 
-사용자가 "작업들 자동으로 굴려줘" 류로 요청하면, Claude(오케스트레이터)는 아래 루프를
-자기 Agent(서브에이전트) 도구로 끝까지 실행한다. cwo는 스케줄링을, Claude는 실행을 맡는다.
-(중간에 사용자에게 일일이 묻지 말고 끝까지 진행하되, needs_approval·통합 실패·오류는 보고)
+When the user asks something like "roll the tasks automatically," Claude (the orchestrator) runs the loop below to
+completion with its own Agent (subagent) tools. cwo handles scheduling; Claude handles execution.
+(Don't ask the user at every step — go all the way to the end — but do report needs_approval · integration failures · errors.)
 
-1. `cwo loop-status` 로 현황 파악 (JSON).
-2. `cwo dispatch-auto` 로 비충돌·auto·의존완료 작업을 worktree로 투입.
-3. 새로 active가 된 작업마다 **서브에이전트(Agent)** 를 `cwd=worktree`로 띄워 구현·커밋시킨다.
-   - 서로 touches가 안 겹치므로 병렬 spawn 가능.
-   - 서브에이전트 프롬프트엔 worktree 절대경로, 작업 title/설명, "구현 후 그 worktree에서 커밋, 외부는 건드리지 말 것"을 준다.
-4. 서브에이전트가 끝나면 `cwo integrate <id>` (테스트→머지→리스 반납).
-   - `auto_redispatch=true`면 integrate가 막혔던 작업을 자동 투입 → 루프가 다음 라운드에 집는다.
-5. `loop-status`의 `loop_can_progress`가 false가 될 때까지 2~4를 반복.
-6. 종료 시 보고: 완료 목록, `needs_approval`(사람 승인 대기), `blocked_auto`, 통합 실패 작업.
+1. Get the current state with `cwo loop-status` (JSON).
+2. Use `cwo dispatch-auto` to dispatch non-conflicting · auto · deps-done tasks into worktrees.
+3. For each task that has just become active, spawn a **subagent (Agent)** with `cwd=worktree` to implement and commit it.
+   - Since their touches don't overlap, they can be spawned in parallel.
+   - Give the subagent prompt the worktree absolute path, the task title/description, and "after implementing, commit in that worktree; don't touch anything outside."
+4. When a subagent finishes, `cwo integrate <id>` (test → merge → release lease).
+   - If `auto_redispatch=true`, integrate auto-dispatches the task that was blocked → the loop picks it up next round.
+5. Repeat 2–4 until `loop_can_progress` in `loop-status` becomes false.
+6. On exit, report: the completed list, `needs_approval` (awaiting human approval), `blocked_auto`, and integration-failed tasks.
 
-**안전 경계**: `auto=false` 작업은 자동 투입하지 않고 `needs_approval`로 보고(사람 승인). 통합 실패(테스트/머지 충돌)면 그 작업은 `active`로 되돌아오며 사람에게 보고한다. 이 루프는 Claude 세션 안에서 돈다(완전 무인 데몬은 Phase 3).
+**Safety boundary**: `auto=false` tasks are not auto-dispatched; report them as `needs_approval` (human approval). On integration failure (test/merge conflict) that task returns to `active` and is reported to the human. This loop runs inside a Claude session (a fully unattended daemon is Phase 3).

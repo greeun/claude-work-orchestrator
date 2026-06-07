@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 한 프로젝트에서 수시로 발생하는 작업을 파일 백로그에 등록하고, 영향범위 리스로 충돌을 차단하며, 비충돌·독립 작업만 git worktree로 투입하는 동시작업 오케스트레이션 엔진(v1).
+**Goal:** A concurrent-work orchestration engine (v1) that captures the work that keeps arising in a single project into a file backlog, blocks conflicts with affected-region leases, and dispatches only non-conflicting · independent work into git worktrees.
 
-**Architecture:** 계층형 — 백로그 코어(작업 레코드 + 상태 디렉터리) + 리스 충돌 엔진을 안정 계약으로 두고, 그 위에 디스패처/통합 게이트/GC를 얹는다. 모든 모듈은 `scripts/`의 플랫 구조, JSON 저장(stdlib), argparse CLI. csm 컨벤션을 따른다.
+**Architecture:** Layered — keep the backlog core (task records + state directories) + the lease conflict engine as a stable contract, and layer the dispatcher / integration gate / GC on top. Every module is a flat structure under `scripts/`, JSON storage (stdlib), argparse CLI. Follows csm conventions.
 
 **Tech Stack:** Python 3.13 (stdlib only — `json`, `subprocess`, `pathlib`, `argparse`, `datetime`, `re`, `shlex`), pytest, git worktree.
 
-> 커밋 메시지는 conventional commits 형식. author는 repo의 설정된 git config(`greeun <github.com@tlog.net>`)를 사용한다.
+> Commit messages follow the conventional commits format. The author uses the repo's configured git config (`greeun <github.com@tlog.net>`).
 
 ---
 
@@ -16,18 +16,18 @@
 
 ```
 claude-skills/claude-work-orchestrator/
-├── SKILL.md                # 프로토콜·트리아지 결정트리·자동투입 정책·command 레퍼런스 (Task 11)
+├── SKILL.md                # protocol · triage decision tree · auto-dispatch policy · command reference (Task 11)
 ├── scripts/
-│   ├── config.py           # 설정 로드 (max_active, stale_minutes, test_command, main_branch, worktree_parent)
-│   ├── paths.py            # touches 경로 겹침 판정 primitive (충돌의 최소 단위)
-│   ├── backlog.py          # Backlog Store: 작업 레코드 I/O, ID 발급, 상태(디렉터리) 이동
-│   ├── lease.py            # Lease Table: LEASES.json, 충돌 판정, acquire/release/heartbeat
-│   ├── dispatch.py         # Dispatcher: can_dispatch + dispatch(worktree 생성) + dispatch_auto
-│   ├── integrate.py        # Integration Gate: 테스트→머지→리스 반납→done→worktree 제거
-│   ├── cwo_gc.py           # GC/Reaper: 고아 리스 회수
-│   └── cwo.py              # CLI 엔트리 (argparse) — 위 모듈 묶음
+│   ├── config.py           # settings loader (max_active, stale_minutes, test_command, main_branch, worktree_parent)
+│   ├── paths.py            # the touches path-overlap primitive (the smallest unit of conflict)
+│   ├── backlog.py          # Backlog Store: task-record I/O, ID issuance, state (directory) moves
+│   ├── lease.py            # Lease Table: LEASES.json, conflict decisions, acquire/release/heartbeat
+│   ├── dispatch.py         # Dispatcher: can_dispatch + dispatch(worktree creation) + dispatch_auto
+│   ├── integrate.py        # Integration Gate: test→merge→release lease→done→remove worktree
+│   ├── cwo_gc.py           # GC/Reaper: reclaim orphan leases
+│   └── cwo.py              # CLI entry (argparse) — bundles the modules above
 └── tests/
-    ├── conftest.py         # 공용 fixture (plain root, git_root)
+    ├── conftest.py         # shared fixtures (plain root, git_root)
     ├── test_paths.py
     ├── test_config.py
     ├── test_backlog.py
@@ -38,17 +38,17 @@ claude-skills/claude-work-orchestrator/
     └── test_cli.py
 ```
 
-각 모듈은 단일 책임. 의존 방향: `paths`/`config` ← `backlog`/`lease` ← `dispatch`/`integrate`/`cwo_gc` ← `cwo`(CLI). 순환 없음.
+Each module has a single responsibility. Dependency direction: `paths`/`config` ← `backlog`/`lease` ← `dispatch`/`integrate`/`cwo_gc` ← `cwo`(CLI). No cycles.
 
 ---
 
 ## Task 1: Scaffolding + test harness
 
 **Files:**
-- Create: `scripts/__init__.py` (빈 파일 — 아님, 플랫 import라 불필요. 대신 디렉터리만)
+- Create: `scripts/__init__.py` (empty file — actually no, flat imports make it unnecessary; just the directory instead)
 - Create: `tests/conftest.py`
 
-- [ ] **Step 1: 디렉터리 생성**
+- [ ] **Step 1: Create directories**
 
 Run:
 ```bash
@@ -56,7 +56,7 @@ cd claude-skills/claude-work-orchestrator
 mkdir -p scripts tests
 ```
 
-- [ ] **Step 2: conftest.py 작성 (공용 fixture)**
+- [ ] **Step 2: Write conftest.py (shared fixtures)**
 
 `tests/conftest.py`:
 ```python
@@ -73,10 +73,11 @@ sys.path.insert(0, str(SCRIPTS))
 
 
 def _init_backlog_dirs(proj: Path) -> None:
-    """backlog/ 상태 디렉터리를 직접 생성한다.
+    """Create the backlog/ state directories directly.
 
-    테스트 대상 모듈(backlog)에 의존하지 않도록 fixture에서 직접 만든다.
-    backlog.Backlog.init() 자체의 동작은 Task 4의 단위 테스트가 검증한다.
+    Built directly in the fixture so it doesn't depend on the module under
+    test (backlog). The behavior of backlog.Backlog.init() itself is verified
+    by Task 4's unit tests.
     """
     for d in ("inbox", "ready", "active", "done"):
         (proj / "backlog" / d).mkdir(parents=True)
@@ -84,7 +85,7 @@ def _init_backlog_dirs(proj: Path) -> None:
 
 @pytest.fixture
 def root(tmp_path):
-    """백로그가 초기화된 임시 프로젝트 루트 (git 아님). paths/backlog/lease/gc용."""
+    """A temporary project root with an initialized backlog (not git). For paths/backlog/lease/gc."""
     proj = tmp_path / "proj"
     proj.mkdir()
     _init_backlog_dirs(proj)
@@ -93,7 +94,7 @@ def root(tmp_path):
 
 @pytest.fixture
 def git_root(tmp_path):
-    """백로그 + git repo(main 브랜치, 초기 커밋)인 임시 프로젝트 루트. dispatch/integrate용."""
+    """A temporary project root that is a backlog + git repo (main branch, initial commit). For dispatch/integrate."""
     proj = tmp_path / "proj"
     proj.mkdir()
     subprocess.run(["git", "init", "-q", str(proj)], check=True)
@@ -107,7 +108,7 @@ def git_root(tmp_path):
     return proj
 ```
 
-> 주: fixture는 `backlog` 모듈을 import하지 않고 디렉터리를 직접 만든다 — 테스트 대상 모듈에 대한 결합을 끊어, config 등 backlog와 무관한 모듈의 테스트가 Task 4 이전에도 통과하도록 한다.
+> Note: the fixture does not import the `backlog` module and creates the directories directly — this breaks coupling to the module under test, so that tests for modules unrelated to backlog (such as config) pass even before Task 4.
 
 - [ ] **Step 3: Commit**
 
@@ -118,7 +119,7 @@ git commit -m "chore: test harness with root and git_root fixtures"
 
 ---
 
-## Task 2: `paths.py` — touches 겹침 판정 (충돌 primitive)
+## Task 2: `paths.py` — touches overlap decision (the conflict primitive)
 
 **Files:**
 - Create: `scripts/paths.py`
@@ -173,15 +174,15 @@ from typing import Iterable
 
 
 def normalize(p: str) -> str:
-    """경로를 비교 가능한 형태로 정규화: 양끝 공백·슬래시 제거."""
+    """Normalize a path into a comparable form: strip surrounding whitespace · slashes."""
     return p.strip().strip("/")
 
 
 def overlaps(a: str, b: str) -> bool:
-    """두 경로가 같은 영역을 가리키면 True.
+    """True if the two paths point to the same region.
 
-    겹침 = 동일하거나, 한쪽이 다른 쪽의 디렉터리 조상.
-    'payment'와 'payment2'처럼 단순 문자열 접두는 겹치지 않는다.
+    Overlap = equal, or one is a directory ancestor of the other.
+    Simple string prefixes like 'payment' and 'payment2' do not overlap.
     """
     a, b = normalize(a), normalize(b)
     if a == b:
@@ -190,7 +191,7 @@ def overlaps(a: str, b: str) -> bool:
 
 
 def any_overlap(a: Iterable[str], b: Iterable[str]) -> bool:
-    """두 touches 집합이 하나라도 겹치면 True."""
+    """True if the two touches sets overlap in even one place."""
     bs = [normalize(x) for x in b]
     return any(overlaps(x, y) for x in a for y in bs)
 ```
@@ -209,7 +210,7 @@ git commit -m "feat: path overlap primitive for touches conflict detection"
 
 ---
 
-## Task 3: `config.py` — 설정 로드
+## Task 3: `config.py` — settings loader
 
 **Files:**
 - Create: `scripts/config.py`
@@ -240,7 +241,7 @@ def test_config_json_overrides_defaults(root):
     cfg = load_config(root)
     assert cfg.max_active == 8
     assert cfg.test_command == "true"
-    # 지정 안 한 값은 기본 유지
+    # values not specified keep their defaults
     assert cfg.main_branch == "main"
 ```
 
@@ -264,7 +265,7 @@ DEFAULTS = {
     "stale_minutes": 30,
     "test_command": "pytest",
     "main_branch": "main",
-    "worktree_parent": None,  # None → root.parent 사용
+    "worktree_parent": None,  # None → use root.parent
 }
 
 
@@ -299,7 +300,7 @@ git commit -m "feat: config loader with defaults and config.json override"
 
 ---
 
-## Task 4: `backlog.py` — 작업 레코드 생성·조회·목록
+## Task 4: `backlog.py` — task record create · get · list
 
 **Files:**
 - Create: `scripts/backlog.py`
@@ -368,7 +369,7 @@ DIRS = ["inbox", "ready", "active", "done"]
 
 
 def dir_for_status(status: str) -> str:
-    """integrating은 active/ 디렉터리를 공유한다. 그 외는 동명 디렉터리."""
+    """integrating shares the active/ directory. Everything else uses a same-named directory."""
     return "active" if status == "integrating" else status
 
 
@@ -443,7 +444,7 @@ git commit -m "feat: backlog store - add, get, list, id generation"
 
 ---
 
-## Task 5: `backlog.py` — 상태 전이 (`set_fields`, `move`, `classify`)
+## Task 5: `backlog.py` — state transitions (`set_fields`, `move`, `classify`)
 
 **Files:**
 - Modify: `scripts/backlog.py` (add methods to `Backlog`)
@@ -545,7 +546,7 @@ git commit -m "feat: backlog state transitions - set_fields, move, classify"
 
 ---
 
-## Task 6: `lease.py` — 리스 테이블 + 충돌 게이트
+## Task 6: `lease.py` — lease table + conflict gate
 
 **Files:**
 - Create: `scripts/lease.py`
@@ -603,14 +604,14 @@ def test_heartbeat_updates_timestamp(root):
     lt = LeaseTable(root)
     lt.acquire("T-001", ["payment/"], "/tmp/wt-1")
     before = lt.get("T-001")["heartbeat"]
-    # 타임스탬프를 과거로 강제 후 heartbeat가 갱신하는지 확인
+    # force the timestamp into the past, then verify heartbeat refreshes it
     leases = lt.load()
     leases[0]["heartbeat"] = "2000-01-01T00:00:00+00:00"
     lt._save(leases)
     lt.heartbeat("T-001")
     after = lt.get("T-001")["heartbeat"]
     assert after != "2000-01-01T00:00:00+00:00"
-    assert after >= before[:4]  # 단순 sanity (현재연도 ISO)
+    assert after >= before[:4]  # simple sanity (current-year ISO)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -707,7 +708,7 @@ git commit -m "feat: lease table with touches-based conflict gate"
 
 ---
 
-## Task 7: `dispatch.py` — `can_dispatch` (순수 투입 판정)
+## Task 7: `dispatch.py` — `can_dispatch` (pure dispatch decision)
 
 **Files:**
 - Create: `scripts/dispatch.py`
@@ -843,7 +844,7 @@ git commit -m "feat: can_dispatch gate - status, deps, lease conflict, ceiling"
 
 ---
 
-## Task 8: `dispatch.py` — `dispatch` + `dispatch_auto` (worktree 생성)
+## Task 8: `dispatch.py` — `dispatch` + `dispatch_auto` (worktree creation)
 
 **Files:**
 - Modify: `scripts/dispatch.py` (add `worktree_path`, `dispatch`, `dispatch_auto`)
@@ -951,7 +952,7 @@ git commit -m "feat: dispatch with git worktree + auto-dispatch of independent t
 
 ---
 
-## Task 9: `integrate.py` — 통합 게이트 (테스트→머지→리스 반납→done)
+## Task 9: `integrate.py` — integration gate (test→merge→release lease→done)
 
 **Files:**
 - Create: `scripts/integrate.py`
@@ -980,7 +981,7 @@ def _ready_and_dispatch(git_root, touches):
     tid = bl.add("feature")
     bl.classify(tid, touches=touches)
     wt = dispatch(git_root, tid)
-    # worktree에 실제 커밋을 만들어 머지할 내용이 있게 함
+    # create a real commit in the worktree so there is something to merge
     (Path(wt) / "feature.txt").write_text("done\n")
     subprocess.run(["git", "-C", str(wt), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(wt), "commit", "-q", "-m", "work"], check=True)
@@ -994,9 +995,9 @@ def test_integrate_happy_path(git_root):
     res = integrate(git_root, tid)
     assert res["ok"] is True
     assert bl.get(tid)["status"] == "done"
-    assert lt.get(tid) is None                      # 리스 반납
-    assert not Path(wt).exists()                    # worktree 제거
-    # main에 머지됐는지
+    assert lt.get(tid) is None                      # lease released
+    assert not Path(wt).exists()                    # worktree removed
+    # was it merged into main
     merged = subprocess.run(
         ["git", "-C", str(git_root), "show", "main:feature.txt"],
         capture_output=True, text=True)
@@ -1010,8 +1011,8 @@ def test_integrate_failing_tests_keeps_active(git_root):
     res = integrate(git_root, tid)
     assert res["ok"] is False
     assert res["reason"] == "tests failed"
-    assert bl.get(tid)["status"] == "active"        # 되돌림
-    assert lt.get(tid) is not None                  # 리스 유지
+    assert bl.get(tid)["status"] == "active"        # rolled back
+    assert lt.get(tid) is not None                  # lease kept
     assert Path(wt).exists()
 ```
 
@@ -1053,7 +1054,7 @@ def integrate(root, task_id: str) -> dict:
 
     backlog.move(task_id, "integrating")
 
-    # 1. 테스트
+    # 1. test
     test = subprocess.run(
         shlex.split(config.test_command), cwd=wt, capture_output=True, text=True
     )
@@ -1062,7 +1063,7 @@ def integrate(root, task_id: str) -> dict:
         return {"ok": False, "reason": "tests failed",
                 "output": test.stdout + test.stderr}
 
-    # 2. 머지
+    # 2. merge
     branch = f"cwo/{task_id}"
     _git(root, "checkout", config.main_branch)
     m = _git(root, "merge", "--no-ff", branch, "-m",
@@ -1073,7 +1074,7 @@ def integrate(root, task_id: str) -> dict:
         return {"ok": False, "reason": "merge conflict",
                 "output": m.stdout + m.stderr}
 
-    # 3. 리스 반납 + done + 정리
+    # 3. release lease + done + cleanup
     leases.release(task_id)
     _git(root, "worktree", "remove", str(wt), "--force")
     _git(root, "branch", "-d", branch)
@@ -1096,7 +1097,7 @@ git commit -m "feat: integration gate - test, merge, release lease, mark done"
 
 ---
 
-## Task 10: `cwo_gc.py` — 고아 리스 회수
+## Task 10: `cwo_gc.py` — reclaim orphan leases
 
 **Files:**
 - Create: `scripts/cwo_gc.py`
@@ -1114,7 +1115,7 @@ from cwo_gc import gc
 
 
 def _active_with_lease(root, worktree):
-    """active 상태 작업 + 그에 대한 리스를 만든다."""
+    """Create an active task + a lease for it."""
     bl, lt = Backlog(root), LeaseTable(root)
     tid = bl.add("t")
     bl.classify(tid, touches=["x/"])
@@ -1130,8 +1131,8 @@ def test_gc_reclaims_missing_worktree(root):
     reclaimed = gc(root)
     assert [r["task"] for r in reclaimed] == [tid]
     assert reclaimed[0]["reason"] == "missing-worktree"
-    assert lt.get(tid) is None                  # 리스 회수
-    assert bl.get(tid)["status"] == "ready"     # 재투입 대기로 되돌림
+    assert lt.get(tid) is None                  # lease reclaimed
+    assert bl.get(tid)["status"] == "ready"     # rolled back to await re-dispatch
     assert bl.get(tid)["worktree"] is None
 
 
@@ -1140,7 +1141,7 @@ def test_gc_reclaims_stale_heartbeat(root, tmp_path):
     wt.mkdir()
     bl, lt = Backlog(root), LeaseTable(root)
     tid = _active_with_lease(root, str(wt))
-    # heartbeat를 과거로 강제
+    # force the heartbeat into the past
     leases = lt.load()
     leases[0]["heartbeat"] = "2000-01-01T00:00:00+00:00"
     lt._save(leases)
@@ -1209,7 +1210,7 @@ def gc(root) -> list[dict]:
     return reclaimed
 ```
 
-> 주의: `missing`을 `stale`보다 먼저 판정해 reason을 정한다 (worktree가 없으면 heartbeat 무관하게 missing-worktree).
+> Note: decide `missing` before `stale` to set the reason (if the worktree is gone, it's missing-worktree regardless of the heartbeat).
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1225,7 +1226,7 @@ git commit -m "feat: gc reclaims orphan leases (missing worktree / stale heartbe
 
 ---
 
-## Task 11: `cwo.py` — CLI 엔트리
+## Task 11: `cwo.py` — CLI entry
 
 **Files:**
 - Create: `scripts/cwo.py`
@@ -1261,14 +1262,14 @@ def test_check_reports_not_ready(root, capsys):
 
 
 def test_full_loop_via_cli(git_root, capsys):
-    # config: 테스트 통과하도록 true
+    # config: "true" so the test passes
     (git_root / "backlog" / "config.json").write_text('{"test_command": "true"}')
     r = str(git_root)
     main(["--root", r, "add", "feature"]); capsys.readouterr()
     main(["--root", r, "classify", "T-001", "--touches", "feat/"]); capsys.readouterr()
     main(["--root", r, "dispatch", "T-001"])
     wt = capsys.readouterr().out.split("@")[-1].strip()
-    # worktree에 커밋 생성
+    # create a commit in the worktree
     (Path(wt) / "f.txt").write_text("x\n")
     subprocess.run(["git", "-C", wt, "add", "-A"], check=True)
     subprocess.run(["git", "-C", wt, "commit", "-q", "-m", "w"], check=True)
@@ -1443,12 +1444,12 @@ git commit -m "feat: cwo CLI - init, add, classify, list, leases, check, dispatc
 
 ---
 
-## Task 12: `SKILL.md` — 프로토콜 문서
+## Task 12: `SKILL.md` — protocol document
 
 **Files:**
 - Create: `SKILL.md`
 
-이 문서가 Claude에게 "언제·어떻게 cwo를 쓰는가"를 알려준다. 코드(결정론)는 scripts가, 판단(트리아지·자동투입 정책)은 이 문서가 담당한다. 본문 500줄 이내.
+This document tells Claude "when · how to use cwo." The code (determinism) is handled by scripts; the judgment (triage · auto-dispatch policy) is handled by this document. Keep the body under 500 lines.
 
 - [ ] **Step 1: Write `SKILL.md`**
 
@@ -1457,11 +1458,14 @@ git commit -m "feat: cwo CLI - init, add, classify, list, leases, check, dispatc
 ---
 name: claude-work-orchestrator
 description: >
-  한 프로젝트에서 수시로 발생하는 요구사항·버그·이슈를 충돌 없이 병렬 처리하는
-  동시작업 오케스트레이터. 파일 백로그에 등록하고, 영향범위 리스로 충돌을 막고,
-  비충돌·독립 작업만 git worktree로 투입한다. csm이 세션을 보면 cwo는 작업을
-  관리한다. Use when: 한 프로젝트에 동시에 여러 작업/이슈가 쌓일 때, 작업을
-  병렬로 안전하게 돌리고 싶을 때, worktree·백로그·작업 큐 관리, `cwo` 명령.
+  A concurrent-work orchestrator that runs the requirements, bugs, and issues
+  that keep cropping up in a single project in parallel, without conflicts.
+  It captures work into a file backlog, blocks conflicts with ownership leases
+  over the affected code regions, and dispatches only non-conflicting,
+  independent work into git worktrees. Where csm watches sessions, cwo manages
+  work. Use when: several tasks/issues pile up in one project at once, you want
+  to run work in parallel safely, or for worktree · backlog · work-queue
+  management and the `cwo` command.
   Triggers — KO: 동시작업, 병렬 작업, 작업 큐, 백로그, 작업 등록, 충돌 없이,
   워크트리 관리, 작업 디스패치. EN: cwo, work orchestrator, backlog, parallel
   tasks, dispatch, worktree management, work queue, concurrent work.
@@ -1469,82 +1473,83 @@ description: >
 
 # Claude Work Orchestrator (`cwo`)
 
-한 프로젝트에서 작업을 **등록(capture)** 과 **투입(dispatch)** 으로 분리하고,
-**영향범위 리스(lease)** 로 충돌을 구조적으로 차단하는 동시작업 엔진.
+A concurrent-work engine that, within a single project, splits work into
+**capture** and **dispatch**, and structurally blocks conflicts with an
+**ownership lease (lease)**.
 
 ## When to use
 
-- 한 프로젝트에 요구사항·버그·이슈가 동시다발로 쌓일 때.
-- 여러 작업을 병렬로 돌리되 파일/머지 충돌은 피하고 싶을 때.
-- 사용자가 `cwo`를 언급하거나 작업 큐/백로그/worktree 관리를 요청할 때.
+- When requirements · bugs · issues pile up simultaneously in one project.
+- When you want to run several tasks in parallel but avoid file/merge conflicts.
+- When the user mentions `cwo` or asks for work-queue / backlog / worktree management.
 
-세션 자체의 관측(어떤 터미널이 살아있나)은 **csm**의 역할. cwo는 *작업*을 다룬다.
+Observing the sessions themselves (which terminal is alive) is **csm**'s job. cwo deals with *work*.
 
 ## Core loop
 
 ```
-등록 → 분류 → 투입(리스 게이트) → 실행(worktree) → 통합(테스트·머지) → done
+capture → classify → dispatch (lease gate) → execute (worktree) → integrate (test · merge) → done
                                        │
-                          발견된 새 작업은 inbox로 되먹임
+                          newly discovered work feeds back into the inbox
 ```
 
 ## Command reference
 
-스크립트 경로: `scripts/cwo.py`. `--root`는 backlog/가 있는 프로젝트 루트(기본 `.`).
+Script path: `scripts/cwo.py`. `--root` is the project root that holds backlog/ (default `.`).
 
 ```bash
-python scripts/cwo.py --root <PROJ> init                 # backlog/ 초기화
-python scripts/cwo.py --root <PROJ> add "<제목>" --type bug --priority high
+python scripts/cwo.py --root <PROJ> init                 # initialize backlog/
+python scripts/cwo.py --root <PROJ> add "<title>" --type bug --priority high
 python scripts/cwo.py --root <PROJ> classify T-001 --touches payment/ api/order.ts --depends-on T-000 [--auto]
 python scripts/cwo.py --root <PROJ> list [--status ready]
-python scripts/cwo.py --root <PROJ> leases               # 활성 리스(점유 현황)
-python scripts/cwo.py --root <PROJ> check T-001          # 투입 가능 판정 (exit 0/1)
-python scripts/cwo.py --root <PROJ> dispatch T-001       # worktree 생성·리스 획득·active
-python scripts/cwo.py --root <PROJ> dispatch-auto        # auto=true·비충돌 작업 일괄 투입
-python scripts/cwo.py --root <PROJ> integrate T-001      # 테스트→머지→리스 반납→done
-python scripts/cwo.py --root <PROJ> gc                   # 고아 리스 회수
+python scripts/cwo.py --root <PROJ> leases               # active leases (occupancy)
+python scripts/cwo.py --root <PROJ> check T-001          # dispatchable? (exit 0/1)
+python scripts/cwo.py --root <PROJ> dispatch T-001       # create worktree · acquire lease · active
+python scripts/cwo.py --root <PROJ> dispatch-auto        # bulk-dispatch auto=true · non-conflicting tasks
+python scripts/cwo.py --root <PROJ> integrate T-001      # test→merge→release lease→done
+python scripts/cwo.py --root <PROJ> gc                   # reclaim orphan leases
 ```
 
-## 분류(triage) 결정 트리 — 발견된 작업을 어디로
+## Triage decision tree — where discovered work goes
 
-active 작업 중 새 이슈를 발견하면, **즉시 처리하지 말고** 먼저 분류한다:
+When you discover a new issue while a task is active, **don't handle it immediately** — classify it first:
 
 ```
-새 이슈 발견
- ├─ 지금 작업 완료에 꼭 필요(Blocking)? → 현재 worktree에서, 별도 커밋
- ├─ 같은 영역·작고·저위험?              → 애매하면 백로그로 ("하는 김에"는 함정)
- └─ 관련 없는 다른 영역?                → 무조건 백로그(add), 현재 브랜치에 안 섞음
+new issue discovered
+ ├─ truly required to finish the current task (Blocking)? → in the current worktree, separate commit
+ ├─ same area · small · low-risk?                         → when in doubt, to the backlog ("while I'm at it" is a trap)
+ └─ unrelated, different area?                            → always to the backlog (add), never mixed into the current branch
 ```
 
-백로그로 회수할 때 `source`에 발견 위치를 남긴다: `add ... --source "discovered(from: T-038)"`.
+When sending it back to the backlog, record where it was found in `source`: `add ... --source "discovered(from: T-038)"`.
 
-## 분류 시 `touches`/`depends_on` 채우기 (Claude의 역할)
+## Filling in `touches`/`depends_on` at classify time (Claude's role)
 
-- **`touches`**: 이 작업이 건드릴 영역. **기본 입도는 디렉터리/모듈** (거칠게 잡아 거짓 병렬 방지). 코드베이스를 보고 초안을 만들고, 사람 승인을 받는다.
-- **`depends_on`**: 선행 작업 id. 순환이 생기지 않게 한다.
+- **`touches`**: the regions this task will touch. **Default granularity is directory/module** (keep it coarse to prevent false parallelism). Draft it by reading the codebase, then get human approval.
+- **`depends_on`**: ids of prerequisite tasks. Make sure no cycle is created.
 
-## 자동 투입 정책 (하이브리드)
+## Auto-dispatch policy (hybrid)
 
-Claude가 **사람 승인 없이** 투입해도 되는 조건 (모두 충족 시):
-1. `status == ready` (사람이 분류 승인)
-2. `touches`가 모든 활성 리스와 비겹침
-3. `depends_on` 전부 `done`
+Conditions under which Claude may dispatch **without human approval** (all must hold):
+1. `status == ready` (a human approved the classification)
+2. `touches` does not overlap any active lease
+3. all `depends_on` are `done`
 4. `auto == true`
 
-이 외에는 사람 승인 후 `dispatch`. 위험한 작업(광범위 touches, 마이그레이션 등)은 `auto`를 켜지 않는다. → 미래에 `auto` 기본값을 올리면 완전자동으로 전환.
+Otherwise `dispatch` only after human approval. For risky work (broad touches, migrations, etc.) do not turn `auto` on. → In the future, raising the `auto` default flips this to fully automatic.
 
-## 동시 작업 수
+## Number of concurrent tasks
 
-충돌 안전성은 리스가 보장한다. 동시 수는 "안전 한계"가 아니라 "수익 체감 지점":
-모듈성·공유 초크포인트·머지 대역폭·머신 자원·사람 검토의 최솟값. 하이브리드는
-보통 2~4(`config.max_active`, 기본 4). 늘리는 진짜 레버는 코드 모듈성.
+Conflict safety is guaranteed by the leases. The concurrency count is not a "safety limit" but a "point of diminishing returns":
+the minimum of modularity · shared chokepoints · merge bandwidth · machine resources · human review. Hybrid is
+usually 2~4 (`config.max_active`, default 4). The real lever to raise it is code modularity.
 
-## 통합 후 / 정리
+## After integration / cleanup
 
-- `integrate`가 테스트 통과 시 머지하고 리스를 반납한다. 테스트 실패·머지 충돌이면 작업을 `active`로 되돌리고 사람 개입을 요청한다.
-- 세션이 죽어 worktree가 사라지거나 heartbeat가 오래되면 `gc`가 리스를 회수하고 작업을 `ready`로 되돌린다.
+- When `integrate`'s tests pass, it merges and releases the lease. On test failure or merge conflict it returns the task to `active` and asks for human intervention.
+- If a session dies and its worktree disappears, or the heartbeat goes stale, `gc` reclaims the lease and returns the task to `ready`.
 
-## 설정 (`backlog/config.json`, 선택)
+## Configuration (`backlog/config.json`, optional)
 
 ```json
 {
@@ -1566,30 +1571,30 @@ git commit -m "docs: SKILL.md protocol - triage tree, auto-dispatch policy, comm
 
 ---
 
-## Self-Review (작성 후 점검 결과)
+## Self-Review (post-writing review results)
 
-**1. Spec coverage** — design.md 각 절을 task에 매핑:
-- 등록/투입 분리 → backlog(Task 4·5) + dispatch(Task 7·8) ✅
-- 영향범위 리스 → paths(Task 2) + lease(Task 6) ✅
-- 상태 머신(integrating=active 공유) → Task 5 `move`/`dir_for_status` ✅
-- 하이브리드 디스패치 + 자동투입 조건 → Task 8 `dispatch_auto` + SKILL.md 정책 ✅
-- 통합 게이트(테스트·머지·반납) → Task 9 ✅
-- GC/고아 리스 → Task 10 ✅
-- 동시성 천장(max_active) → Task 7 ✅
-- Classifier(touches/deps 초안) → SKILL.md(판단) + Task 5 `classify`(저장) ✅
-- 되먹임 루프(발견작업 inbox) → SKILL.md 트리아지 트리 + `add --source` ✅
-- full-test-orchestrator 연계 → `config.test_command`로 임의 테스트 명령 주입 가능(기본 pytest) ✅
-- 인터페이스 분리(미래 웹UI/자동) → backlog 파일계약 + can_dispatch 정책 분리 ✅
+**1. Spec coverage** — mapping each section of design.md to a task:
+- capture/dispatch separation → backlog(Task 4·5) + dispatch(Task 7·8) ✅
+- affected-region lease → paths(Task 2) + lease(Task 6) ✅
+- state machine (integrating=shares active) → Task 5 `move`/`dir_for_status` ✅
+- hybrid dispatch + auto-dispatch conditions → Task 8 `dispatch_auto` + SKILL.md policy ✅
+- integration gate (test·merge·release) → Task 9 ✅
+- GC/orphan lease → Task 10 ✅
+- concurrency ceiling (max_active) → Task 7 ✅
+- Classifier (touches/deps draft) → SKILL.md (judgment) + Task 5 `classify` (storage) ✅
+- feedback loop (discovered work → inbox) → SKILL.md triage tree + `add --source` ✅
+- full-test-orchestrator linkage → an arbitrary test command can be injected via `config.test_command` (default pytest) ✅
+- interface separation (future web UI/auto) → backlog file contract + can_dispatch policy separation ✅
 
-**2. Placeholder scan** — "TBD/TODO/적절히 처리" 없음. 모든 코드 스텝에 실제 코드 포함. ✅
+**2. Placeholder scan** — no "TBD/TODO/handle appropriately." Every code step contains real code. ✅
 
-**3. Type consistency** — 함수 시그니처 교차 확인:
-- `Backlog`: init/next_id/path_of/add/get/save/list/set_fields/move/classify — Task 4·5에서 정의, Task 7~11에서 동일 사용 ✅
-- `LeaseTable`: load/_save/active/get/conflicts/acquire/release/heartbeat — Task 6 정의, 이후 동일 ✅
-- `can_dispatch(backlog, leases, config, task)` — Task 7 정의, Task 8·11 동일 호출 ✅
-- `dispatch(root, task_id)` / `dispatch_auto(root)` — Task 8 정의, Task 11 동일 ✅
-- `integrate(root, task_id)` → dict{ok,...} — Task 9 정의, Task 11 동일 ✅
-- `gc(root)` → list[dict{task,reason}] — Task 10 정의, Task 11 동일 ✅
-- `load_config(root)` → Config — Task 3 정의, 이후 동일 ✅
+**3. Type consistency** — cross-checking function signatures:
+- `Backlog`: init/next_id/path_of/add/get/save/list/set_fields/move/classify — defined in Task 4·5, used identically in Tasks 7~11 ✅
+- `LeaseTable`: load/_save/active/get/conflicts/acquire/release/heartbeat — defined in Task 6, identical thereafter ✅
+- `can_dispatch(backlog, leases, config, task)` — defined in Task 7, called identically in Tasks 8·11 ✅
+- `dispatch(root, task_id)` / `dispatch_auto(root)` — defined in Task 8, identical in Task 11 ✅
+- `integrate(root, task_id)` → dict{ok,...} — defined in Task 9, identical in Task 11 ✅
+- `gc(root)` → list[dict{task,reason}] — defined in Task 10, identical in Task 11 ✅
+- `load_config(root)` → Config — defined in Task 3, identical thereafter ✅
 
-불일치 없음.
+No inconsistencies.
